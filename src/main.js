@@ -4,7 +4,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   palette,
   createToonMaterial,
-  createGroundMaterial,
   createOutlineMaterial,
 } from './toon.js';
 
@@ -36,7 +35,6 @@ controls.autoRotate = !still;
 controls.autoRotateSpeed = 0.8;
 
 const shared = {
-  uInk: { value: new THREE.Color(palette.ink) },
   uLightDir: { value: new THREE.Vector3(-0.6, 1.0, 0.45).normalize() },
   uDotSize: { value: 6 },
 };
@@ -46,12 +44,6 @@ const materials = {
   'Purple Crust': createToonMaterial(palette.crust, shared),
   'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared),
 };
-
-// The floor only carries the halftone shadow; it is kept out of the outline pass.
-const ground = new THREE.Mesh(new THREE.CircleGeometry(12, 64), createGroundMaterial(shared));
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -0.001;
-scene.add(ground);
 
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
@@ -105,7 +97,6 @@ renderer.setAnimationLoop(() => {
   renderer.setRenderTarget(colorTarget);
   renderer.render(scene, camera);
 
-  ground.visible = false;
   scene.overrideMaterial = normalMaterial;
   const background = scene.background;
   scene.background = null;
@@ -114,7 +105,6 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
   scene.background = background;
   scene.overrideMaterial = null;
-  ground.visible = true;
 
   renderer.setRenderTarget(null);
   renderer.render(quadScene, quadCamera);

@@ -4,10 +4,10 @@ import * as THREE from 'three';
 // turned off in main.js so these hex codes show up on screen exactly as written.
 export const palette = {
   paper: '#f4ecdc',
-  ink: '#24122c',
-  crumb: { base: '#f6dfa8', shade: '#dcb478' },
-  crust: { base: '#c46a2c', shade: '#97461c' },
-  spread: { base: '#a75bd1', shade: '#7a3aa6' },
+  ink: '#211d1e',
+  crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e' },
+  crust: { base: '#c46a2c', shade: '#a9531f', dots: '#6e2c0e' },
+  spread: { base: '#a75bd1', shade: '#8c45b8', dots: '#55247a' },
 };
 
 // Halftone dots on a 45° screen-space grid. `dark` (0..1) sets the dot radius,
@@ -23,15 +23,16 @@ const halftoneGLSL = /* glsl */ `
   }
 `;
 
-// Cel shading: a hard light/shade split, halftone dots creeping in as the
-// surface turns away from the light, and an optional crisp specular blob.
-export function createToonMaterial({ base, shade, specular = 0 }, shared) {
+// Cel shading: a hard light/shade split, halftone dots (a deeper tone of the
+// surface color) creeping in as the surface turns away from the light, and an
+// optional glossy highlight.
+export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
+      uDots: { value: new THREE.Color(dots) },
       uSpecular: { value: specular },
-      uInk: shared.uInk,
       uLightDir: shared.uLightDir,
       uDotSize: shared.uDotSize,
     },
@@ -48,7 +49,7 @@ export function createToonMaterial({ base, shade, specular = 0 }, shared) {
     fragmentShader: /* glsl */ `
       uniform vec3 uBase;
       uniform vec3 uShade;
-      uniform vec3 uInk;
+      uniform vec3 uDots;
       uniform vec3 uLightDir;
       uniform float uSpecular;
       uniform float uDotSize;
@@ -64,48 +65,17 @@ export function createToonMaterial({ base, shade, specular = 0 }, shared) {
         float lit = smoothstep(-0.02, 0.02, ndl);
         vec3 color = mix(uShade, uBase, lit);
 
-        float dark = (1.0 - smoothstep(-0.7, 0.35, ndl)) * 0.7;
-        color = mix(color, uInk, halftone(gl_FragCoord.xy, uDotSize, dark));
+        float dark = (1.0 - smoothstep(-0.6, 0.7, ndl)) * 0.85;
+        color = mix(color, uDots, halftone(gl_FragCoord.xy, uDotSize, dark));
 
-        float spec = pow(max(dot(N, normalize(L + V)), 0.0), 60.0);
-        color = mix(color, vec3(1.0, 0.97, 0.94), smoothstep(0.55, 0.6, spec) * uSpecular);
+        // Glossy highlight: a solid core with a ring of light dots around it.
+        float spec = pow(max(dot(N, normalize(L + V)), 0.0), 24.0);
+        vec3 shine = vec3(1.0, 0.97, 0.99);
+        float glow = smoothstep(0.12, 0.45, spec) * 0.8;
+        color = mix(color, shine, halftone(gl_FragCoord.xy + 0.5 * uDotSize, uDotSize, glow) * uSpecular);
+        color = mix(color, shine, smoothstep(0.45, 0.5, spec) * uSpecular);
 
         gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-  });
-}
-
-// A paper-colored floor that only shows a halftone contact shadow under the toast.
-export function createGroundMaterial(shared) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uPaper: { value: new THREE.Color(palette.paper) },
-      uInk: shared.uInk,
-      uDotSize: shared.uDotSize,
-      uLightDir: shared.uLightDir,
-    },
-    vertexShader: /* glsl */ `
-      varying vec3 vWorld;
-      void main() {
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorld = worldPos.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uPaper;
-      uniform vec3 uInk;
-      uniform vec3 uLightDir;
-      uniform float uDotSize;
-      varying vec3 vWorld;
-      ${halftoneGLSL}
-      void main() {
-        // Push the shadow away from the light a little.
-        vec2 offset = -normalize(uLightDir.xz) * 0.35;
-        float d = length((vWorld.xz - offset) / vec2(1.25, 1.4));
-        float dark = (1.0 - smoothstep(0.55, 1.2, d)) * 0.75;
-        gl_FragColor = vec4(mix(uPaper, uInk, halftone(gl_FragCoord.xy, uDotSize, dark)), 1.0);
       }
     `,
   });
@@ -127,8 +97,8 @@ export function createOutlineMaterial() {
       uNear: { value: 0.1 },
       uFar: { value: 100 },
       uInk: { value: new THREE.Color(palette.ink) },
-      uThickness: { value: 1.6 },
-      uWobble: { value: 3.0 },
+      uThickness: { value: 2.0 },
+      uWobble: { value: 1.1 },
       uBoilFps: { value: 6.0 },
     },
     vertexShader: /* glsl */ `
@@ -175,16 +145,17 @@ export function createOutlineMaterial() {
         vec2 jitter = vec2(hash(vec2(frame, 1.0)), hash(vec2(frame, 2.0))) * 100.0;
         vec2 cssPx = gl_FragCoord.xy / uPixelRatio;
 
-        // Squiggle: slow sine sway plus finer noise, measured in CSS pixels.
+        // Squiggle: a fine, tight jitter measured in CSS pixels, so the line
+        // keeps its path and only its edge wobbles.
         vec2 wobble = vec2(
-          sin(cssPx.y * 0.045 + frame * 1.7) + (noise(cssPx * 0.09 + jitter) - 0.5) * 1.6,
-          cos(cssPx.x * 0.045 + frame * 2.3) + (noise(cssPx * 0.09 + jitter.yx + 17.0) - 0.5) * 1.6
-        );
+          noise(cssPx * 0.3 + jitter) - 0.5,
+          noise(cssPx * 0.3 + jitter.yx + 17.0) - 0.5
+        ) * 2.0;
         vec2 texel = 1.0 / uResolution;
         vec2 uv = vUv + wobble * uWobble * uPixelRatio * texel;
 
-        // Slightly uneven line weight, like a pen.
-        float weight = uThickness * uPixelRatio * mix(0.75, 1.3, noise(cssPx * 0.02 + jitter * 0.1));
+        // Nearly even line weight, like a felt-tip pen.
+        float weight = uThickness * uPixelRatio * mix(0.9, 1.1, noise(cssPx * 0.05 + jitter * 0.1));
         vec2 o = texel * weight;
 
         float d00 = linearDepth(uv + vec2(-o.x, -o.y));
@@ -213,8 +184,8 @@ export function createOutlineMaterial() {
         float normalEdge = sqrt(dot(ngx, ngx) + dot(ngy, ngy));
 
         float edge = max(
-          smoothstep(0.08, 0.2, depthEdge),
-          smoothstep(0.9, 1.4, normalEdge)
+          smoothstep(0.1, 0.14, depthEdge),
+          smoothstep(1.0, 1.15, normalEdge)
         );
 
         vec3 color = texture2D(tColor, vUv).rgb;
