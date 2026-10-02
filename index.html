@@ -15,6 +15,7 @@
       --frame-radius: 32px;
       --frame-color: #ffedcb;
       --ink: #211d1e;
+      --ink-line: 2px;
       font-size: clamp(14px, 1.111vw, 24px);
     }
     html, body { margin: 0; height: 100%; background: var(--frame-color); overflow: hidden; }
@@ -42,23 +43,27 @@
       -webkit-text-stroke-color: var(--ink);
       filter: url(#ink-wobble);
     }
-    .title span { position: absolute; left: 0; right: 0; text-align: center; white-space: nowrap; }
+    .title > span { position: absolute; left: 0; right: 0; text-align: center; white-space: nowrap; }
+    /* Each letter is its own span so it gets its own outline on top of the
+       letter before it, even where the tight spacing makes them overlap. */
+    .title > span > span { display: inline-block; }
     .title__small {
       top: calc(var(--title-small-top, 83) * var(--u));
       font-size: calc(var(--title-small-size, 38.5) * var(--u));
-      letter-spacing: calc(var(--title-small-spacing, 0.6) * var(--u));
-      -webkit-text-stroke-width: calc(5 * var(--u));
+      letter-spacing: 0.01em;
+      -webkit-text-stroke-width: calc(var(--ink-line, 2px) * 3);
       text-shadow: calc(3 * var(--u)) calc(3.5 * var(--u)) 0 var(--ink);
-      transform: translateX(calc(var(--title-small-x, 0) * var(--u))) rotate(calc(var(--title-small-rotate, 0) * 1deg));
+      transform: translateX(calc(var(--title-small-x, 0) * var(--u) + 0.005em)) rotate(calc(var(--title-small-rotate, 0) * 1deg));
     }
     .title__big {
       top: calc(var(--title-big-top, 113) * var(--u));
       font-size: calc(var(--title-big-size, 147) * var(--u));
-      letter-spacing: calc(var(--title-big-spacing, 4.5) * var(--u));
-      -webkit-text-stroke-width: calc(9 * var(--u));
+      letter-spacing: -0.04em;
+      -webkit-text-stroke-width: calc(var(--ink-line, 2px) * 3);
       text-shadow: calc(6 * var(--u)) calc(8 * var(--u)) 0 var(--ink);
       transform-origin: 50% 50%;
-      transform: translateX(calc(var(--title-big-x, -4) * var(--u)))
+      /* -0.02em re-centers the letters after the negative letter spacing. */
+      transform: translateX(calc(var(--title-big-x, -4) * var(--u) - 0.02em))
         perspective(calc(900 * var(--u)))
         rotateY(calc(var(--title-big-turn, -5) * 1deg))
         rotate(calc(var(--title-big-rotate, 3.5) * 1deg));
@@ -147,15 +152,16 @@
 </head>
 <body>
   <h1 class="title" aria-label="Pick your spread">
-    <span class="title__small" aria-hidden="true">Pick your</span>
-    <span class="title__big" aria-hidden="true">Spread</span>
+    <span class="title__small" aria-hidden="true"><span>P</span><span>i</span><span>c</span><span>k</span> <span>y</span><span>o</span><span>u</span><span>r</span></span>
+    <span class="title__big" aria-hidden="true"><span>S</span><span>p</span><span>r</span><span>e</span><span>a</span><span>d</span></span>
   </h1>
   <ul class="flavors" aria-label="Spread flavors"></ul>
   <!-- Gives the titles and buttons the same hand-drawn wobble as the toast. -->
   <svg width="0" height="0" style="position: absolute" aria-hidden="true">
     <filter id="ink-wobble" x="-5%" y="-5%" width="110%" height="110%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="1" seed="1" />
-      <feDisplacementMap in="SourceGraphic" scale="2" xChannelSelector="R" yChannelSelector="G" />
+      <!-- Same grain and wiggle size as the toast's outlines. -->
+      <feTurbulence type="fractalNoise" baseFrequency="0.3" numOctaves="1" seed="1" />
+      <feDisplacementMap in="SourceGraphic" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
     </filter>
   </svg>
   <script type="module" src="./src/main.js"></script>

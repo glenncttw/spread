@@ -32,6 +32,8 @@ export const defaults = {
   thickness: 2,
   squiggle: 1.1,
   boil: 6,
+  lineDepth: 0.03,
+  lineFold: 0.4,
   crust: palette.crust.base,
   crumb: palette.crumb.base,
   spread: palette.spread.base,
@@ -53,6 +55,12 @@ export const defaults = {
   frameLine: 2,
   frameColor: '#ffedcb',
   frameInk: palette.ink,
+  magnet: true,
+  magnetPull: 24,
+  magnetSize: 90,
+  magnetReach: 160,
+  floatAmount: 0.5,
+  floatSpeed: 1,
   // Where the toast sits. Positions are in scene units, angles in degrees.
   toastX: 0,
   toastY: -0.3,
@@ -87,6 +95,8 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   outline.uniforms.uThickness.value = s.thickness;
   outline.uniforms.uWobble.value = s.squiggle;
   outline.uniforms.uBoilFps.value = s.boil;
+  outline.uniforms.uDepthEdge.value = s.lineDepth;
+  outline.uniforms.uNormalEdge.value = s.lineFold;
 
   const u = outline.uniforms;
   u.uBgTop.value.set(s.bgTop);
@@ -103,9 +113,12 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uFrameInk.value.set(s.frameInk);
   const f = frameSize(s);
   u.uFrame.value.set(f.border, f.radius, f.line);
+  u.uMagnetPull.value = s.magnetPull * f.scale;
+  u.uMagnetSize.value = s.magnetSize * f.scale;
   const root = document.documentElement.style;
   root.setProperty('--frame-border', `${f.border}px`);
   root.setProperty('--frame-radius', `${f.radius}px`);
+  root.setProperty('--ink-line', `${f.line}px`);
   root.setProperty('--frame-color', s.frameColor);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', s.frameColor);
   controls.autoRotate = s.spin;
@@ -120,6 +133,7 @@ export function frameSize(s, width = window.innerWidth) {
     border: Math.max(s.frameBorder * scale, s.frameBorder * 0.5),
     radius: Math.max(s.frameRadius * scale, s.frameRadius * 0.6),
     line: Math.max(s.frameLine * scale, 1.5),
+    scale: Math.max(scale, 0.5),
   };
 }
 
@@ -173,6 +187,8 @@ export function createTweakPanel(settings, onChange, overlay) {
   place.add(settings, 'followCursor').name('Follows the cursor');
   place.add(settings, 'followAmount', 0, 45, 1).name('Follow amount (°)');
   place.add(settings, 'followSmooth', 0, 0.95, 0.01).name('Follow smoothness');
+  place.add(settings, 'floatAmount', 0, 2, 0.01).name('Float amount');
+  place.add(settings, 'floatSpeed', 0, 3, 0.01).name('Float speed');
   place.add(settings, 'orbit').name('Drag to orbit camera');
   place.add(settings, 'spin').name('Spin');
 
@@ -233,12 +249,18 @@ export function createTweakPanel(settings, onChange, overlay) {
   frame.add(settings, 'frameLine', 0, 6, 0.25).name('Outline (px)');
   frame.addColor(settings, 'frameColor').name('Border color');
   frame.addColor(settings, 'frameInk').name('Outline color');
+  frame.add(settings, 'magnet').name('Magnetic border');
+  frame.add(settings, 'magnetPull', 0, 80, 1).name('Magnet bulge (px)');
+  frame.add(settings, 'magnetSize', 20, 250, 1).name('Magnet width (px)');
+  frame.add(settings, 'magnetReach', 20, 400, 1).name('Magnet reach (px)');
 
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');
   outlines.add(settings, 'thickness', 0.5, 5, 0.1).name('Thickness');
   outlines.add(settings, 'squiggle', 0, 5, 0.1).name('Squiggle');
   outlines.add(settings, 'boil', 0, 15, 1).name('Wiggle speed');
+  outlines.add(settings, 'lineDepth', 0.01, 0.3, 0.005).name('Outline: depth needed');
+  outlines.add(settings, 'lineFold', 0.1, 1.5, 0.01).name('Inner lines: fold needed');
 
   const colors = gui.addFolder('Colors');
   colors.addColor(settings, 'crust').name('Crust');

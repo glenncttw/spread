@@ -13,6 +13,6 @@ The scene sits in a rounded window inside a cream border (#FFEDCB, 20px border a
 
 The "Pick your spread" titles use BD Karlo (`assets/fonts`). Their positions, and the five flavor dots on the left, are measured off the 1440x800 mockup in CSS units of `--u` (one mockup pixel), so they match it at that size and scale with the window width. On phones the dots move to a row at the bottom.
 
-Picking a dot shrinks the spread away as a solid outlined shape and grows the new flavor back in (`src/spreadSwitch.js`). The toast turns slightly toward the cursor; the "Toast position" sliders place, turn and size it.
+Picking a dot shrinks the spread away as a solid outlined shape and grows the new flavor back in (`src/spreadSwitch.js`). The toast floats gently and turns slightly toward the cursor; the "Toast position" sliders place, turn and size it and set the float. When the cursor nears the edge, the cream border bulges toward it on a springy follow ("Magnetic border" in the Frame folder).
 
 "Layout overlay" in the panel lets you upload a mockup image and show it over the page (20% opacity by default) to check positions (`src/overlay.js`).

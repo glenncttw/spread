@@ -393,6 +393,8 @@ export function createOutlineMaterial() {
       uThickness: { value: 2.0 },
       uWobble: { value: 1.1 },
       uBoilFps: { value: 6.0 },
+      uDepthEdge: { value: 0.03 }, // how big a depth jump needs a line
+      uNormalEdge: { value: 0.4 }, // how sharp a fold needs a line
       uBgTop: { value: new THREE.Color(palette.background[0]) },
       uBgMid: { value: new THREE.Color(palette.background[1]) },
       uBgBottom: { value: new THREE.Color(palette.background[2]) },
@@ -409,6 +411,12 @@ export function createOutlineMaterial() {
       uFrame: { value: new THREE.Vector3(20, 32, 2) },
       uFrameColor: { value: new THREE.Color('#ffedcb') },
       uFrameInk: { value: new THREE.Color(palette.ink) },
+      // Magnetic border: where the bulge is (CSS px, from the bottom left),
+      // how strongly it's pulled right now (0..1), its width and its height.
+      uMagnet: { value: new THREE.Vector2() },
+      uMagnetStrength: { value: 0 },
+      uMagnetSize: { value: 90 },
+      uMagnetPull: { value: 24 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -431,6 +439,8 @@ export function createOutlineMaterial() {
       uniform float uThickness;
       uniform float uWobble;
       uniform float uBoilFps;
+      uniform float uDepthEdge;
+      uniform float uNormalEdge;
       uniform vec3 uBgTop;
       uniform vec3 uBgMid;
       uniform vec3 uBgBottom;
@@ -445,6 +455,10 @@ export function createOutlineMaterial() {
       uniform vec3 uFrame;
       uniform vec3 uFrameColor;
       uniform vec3 uFrameInk;
+      uniform vec2 uMagnet;
+      uniform float uMagnetStrength;
+      uniform float uMagnetSize;
+      uniform float uMagnetPull;
       varying vec2 vUv;
 
       // Signed distance to a rounded rectangle (negative inside).
@@ -597,34 +611,28 @@ export function createOutlineMaterial() {
         float weight = uThickness * uPixelRatio * mix(0.9, 1.1, noise(cssPx * 0.05 + jitter * 0.1));
         vec2 o = texel * weight;
 
-        float d00 = linearDepth(uv + vec2(-o.x, -o.y));
         float d01 = linearDepth(uv + vec2(-o.x, 0.0));
-        float d02 = linearDepth(uv + vec2(-o.x, o.y));
         float d10 = linearDepth(uv + vec2(0.0, -o.y));
         float d11 = linearDepth(uv);
         float d12 = linearDepth(uv + vec2(0.0, o.y));
-        float d20 = linearDepth(uv + vec2(o.x, -o.y));
         float d21 = linearDepth(uv + vec2(o.x, 0.0));
-        float d22 = linearDepth(uv + vec2(o.x, o.y));
-        float dgx = d00 + 2.0 * d01 + d02 - d20 - 2.0 * d21 - d22;
-        float dgy = d00 + 2.0 * d10 + d20 - d02 - 2.0 * d12 - d22;
-        float depthEdge = sqrt(dgx * dgx + dgy * dgy) / max(min(d11, d01 + d21), 0.001);
 
-        vec3 n00 = texture2D(tNormal, uv + vec2(-o.x, -o.y)).rgb;
         vec3 n01 = texture2D(tNormal, uv + vec2(-o.x, 0.0)).rgb;
-        vec3 n02 = texture2D(tNormal, uv + vec2(-o.x, o.y)).rgb;
         vec3 n10 = texture2D(tNormal, uv + vec2(0.0, -o.y)).rgb;
         vec3 n12 = texture2D(tNormal, uv + vec2(0.0, o.y)).rgb;
-        vec3 n20 = texture2D(tNormal, uv + vec2(o.x, -o.y)).rgb;
         vec3 n21 = texture2D(tNormal, uv + vec2(o.x, 0.0)).rgb;
-        vec3 n22 = texture2D(tNormal, uv + vec2(o.x, o.y)).rgb;
-        vec3 ngx = n00 + 2.0 * n01 + n02 - n20 - 2.0 * n21 - n22;
-        vec3 ngy = n00 + 2.0 * n10 + n20 - n02 - 2.0 * n12 - n22;
-        float normalEdge = sqrt(dot(ngx, ngx) + dot(ngy, ngy));
 
+        // Second differences (how much the center differs from its four
+        // neighbours) instead of first differences: a flat or evenly curving
+        // surface seen at a steep angle changes depth and normal steadily and
+        // gives ~0 here, so it no longer smears into a muddy dark band. Real
+        // silhouettes and creases still jump and still get a line.
+        vec3 n11 = texture2D(tNormal, uv).rgb;
+        float depthJump = abs(d01 + d21 + d10 + d12 - 4.0 * d11) / max(d11, 0.001);
+        float normalJump = length(n01 + n21 + n10 + n12 - 4.0 * n11);
         float edge = max(
-          smoothstep(0.1, 0.14, depthEdge),
-          smoothstep(1.0, 1.15, normalEdge)
+          smoothstep(uDepthEdge, uDepthEdge * 1.5, depthJump),
+          smoothstep(uNormalEdge, uNormalEdge * 1.3, normalJump)
         );
 
         // The frame: the scene sits in a rounded window inside a cream border,
@@ -632,6 +640,12 @@ export function createOutlineMaterial() {
         vec2 view = uResolution / uPixelRatio;
         vec2 inner = max(view - 2.0 * uFrame.x, vec2(1.0));
         float frameDist = roundRect(cssPx + wobble * uWobble * 0.5 - view * 0.5, inner * 0.5, uFrame.y);
+        // Near the cursor the cream border swells inward in a soft, slightly
+        // wobbling bump, as if it's being pulled toward the pointer.
+        vec2 toMagnet = cssPx - uMagnet;
+        float bump = exp(-dot(toMagnet, toMagnet) / (2.0 * uMagnetSize * uMagnetSize));
+        bump *= 1.0 + 0.12 * sin(uBgTime * 3.1 + toMagnet.x * 0.03) * sin(uBgTime * 2.3 + toMagnet.y * 0.03);
+        frameDist += bump * uMagnetStrength * uMagnetPull;
         float aaPx = 0.75 / uPixelRatio;
         float inside = 1.0 - smoothstep(-aaPx, aaPx, frameDist);
         float frameLine = 1.0 - smoothstep(uFrame.z * 0.5 - aaPx, uFrame.z * 0.5 + aaPx, abs(frameDist + uFrame.z * 0.5));

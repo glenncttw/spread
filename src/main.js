@@ -15,6 +15,7 @@ import {
   applySurfaceColor,
   updateLights,
   createTweakPanel,
+  frameSize,
 } from './tweaks.js';
 import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
@@ -122,17 +123,22 @@ function placeToast() {
   placement.scale.setScalar(settings.toastSize);
 }
 
-// Cursor position across the window, -1..1 on each axis.
+// Cursor position across the window, -1..1 on each axis, plus where it is in
+// pixels (for the magnetic border).
 const pointer = new THREE.Vector2();
+const pointerPx = { x: 0, y: 0, inside: false };
 window.addEventListener('pointermove', (event) => {
   pointer.set((event.clientX / window.innerWidth) * 2 - 1, (event.clientY / window.innerHeight) * 2 - 1);
+  pointerPx.x = event.clientX;
+  pointerPx.y = event.clientY;
+  pointerPx.inside = true;
 });
-document.addEventListener('pointerleave', () => pointer.set(0, 0));
+document.documentElement.addEventListener('pointerleave', () => {
+  pointer.set(0, 0);
+  pointerPx.inside = false;
+});
 
-let lastFrame = performance.now();
-function followCursor(now) {
-  const dt = Math.min((now - lastFrame) / 1000, 0.1);
-  lastFrame = now;
+function followCursor(dt) {
   const on = settings.followCursor && !still;
   const amount = THREE.MathUtils.degToRad(settings.followAmount);
   const targetTurn = on ? pointer.x * amount : 0;
@@ -141,6 +147,51 @@ function followCursor(now) {
   const ease = 1 - Math.pow(1 - THREE.MathUtils.lerp(1, 0.02, settings.followSmooth), dt * 60);
   follow.rotation.y += (targetTurn - follow.rotation.y) * ease;
   follow.rotation.x += (targetTilt - follow.rotation.x) * ease;
+}
+
+// A slow, gentle bob and sway so the toast feels like it's hovering.
+function floatToast(time) {
+  const a = still ? 0 : settings.floatAmount;
+  const t = time * settings.floatSpeed;
+  follow.position.y = Math.sin(t * 1.1) * 0.05 * a;
+  follow.rotation.z = (Math.sin(t * 0.7 + 1.3) * 1.6 * a * Math.PI) / 180;
+  placement.position.x = modelCenter.x + settings.toastX + Math.sin(t * 0.5 + 0.4) * 0.02 * a;
+}
+
+// The magnetic border: the bulge chases the cursor along the frame on a
+// springy follow, and swells as the cursor gets close to the edge.
+const magnet = { x: 0, y: 0, vx: 0, vy: 0, strength: 0, vs: 0 };
+function updateMagnet(dt) {
+  const u = outline.uniforms;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const f = frameSize(settings, w);
+  let target = 0;
+  let tx = magnet.x;
+  let ty = magnet.y;
+  if (settings.magnet && pointerPx.inside && !still) {
+    // Distance from the cursor to the nearest edge of the scene window.
+    const d = Math.min(pointerPx.x - f.border, w - f.border - pointerPx.x, pointerPx.y - f.border, h - f.border - pointerPx.y);
+    const reach = settings.magnetReach * f.scale;
+    target = 1 - THREE.MathUtils.smoothstep(d, 0, reach);
+    tx = pointerPx.x;
+    ty = h - pointerPx.y; // the shader counts from the bottom
+    if (magnet.strength < 0.01) {
+      magnet.x = tx;
+      magnet.y = ty;
+    }
+  }
+  // Damped springs: a little overshoot makes it feel fluid and elastic.
+  const k = 120;
+  const damping = 14;
+  magnet.vx += ((tx - magnet.x) * k - magnet.vx * damping) * dt;
+  magnet.vy += ((ty - magnet.y) * k - magnet.vy * damping) * dt;
+  magnet.x += magnet.vx * dt;
+  magnet.y += magnet.vy * dt;
+  magnet.vs += ((target - magnet.strength) * 90 - magnet.vs * 11) * dt;
+  magnet.strength = Math.max(0, magnet.strength + magnet.vs * dt);
+  u.uMagnet.value.set(magnet.x, magnet.y);
+  u.uMagnetStrength.value = magnet.strength;
 }
 
 // Render targets: the toon-shaded color, and normals + depth for finding edges.
@@ -224,9 +275,14 @@ resize();
 const wobble = document.querySelector('#ink-wobble feTurbulence');
 let wobbleFrame = -1;
 
+let lastFrame = performance.now();
 renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
   controls.update();
-  followCursor(now);
+  followCursor(dt);
+  floatToast(now / 1000);
+  updateMagnet(dt);
   scene.updateMatrixWorld();
   if (model) shared.uToastInv.value.copy(model.matrixWorld).invert();
   updateLights(settings, shared, camera, controls.target);
@@ -264,5 +320,6 @@ window.toast = {
   controls,
   dissolve,
   overlay,
+  outline,
   switchSpread: () => spreadSwitch.switchSpread(),
 };
