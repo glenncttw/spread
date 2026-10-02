@@ -75,6 +75,14 @@
       pointer-events: none;
     }
     .flavor {
+      /* --px is one design pixel: the 1440px mockup's on big screens, a real
+         pixel on phones. GSAP (src/ui.js) tweens --s (hover scale), --lift
+         (rises off the page on hover) and --press (pushed in when picked). */
+      --px: var(--u);
+      --shift-y: -50%;
+      --s: 1;
+      --lift: 0;
+      --press: 0;
       position: absolute;
       left: calc(var(--x) * var(--u));
       top: calc(var(--y) * var(--u));
@@ -82,15 +90,17 @@
       height: calc(40 * var(--u));
       min-width: 22px;
       min-height: 22px;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, var(--shift-y))
+        translate(calc(var(--press) * 2.4 * var(--px) - var(--lift) * 1px), calc(var(--press) * 2.4 * var(--px) - var(--lift) * 2px))
+        scale(var(--s));
       padding: 0;
-      border: calc(2.5 * var(--u)) solid var(--ink);
+      border: calc(2.5 * var(--px)) solid var(--ink);
       border-radius: 50%;
       background: var(--color);
       /* Five stacked hard shadows (Glenn's Figma offsets at 1440px: 0.68,
          1.35, 2, 2.71 and 3.39) blend into one extruded edge. --d scales the
-         whole stack, so hover and press only change --d. */
-      --d: calc(1 * var(--u));
+         whole stack: deeper when lifted, shallow when pressed in. */
+      --d: calc((1 + 0.4 * var(--lift) - 0.7 * var(--press)) * var(--px));
       box-shadow:
         calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
         calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
@@ -100,29 +110,126 @@
       cursor: pointer;
       pointer-events: auto;
       filter: url(#ink-wobble);
-      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
     }
-    .flavor:hover { transform: translate(-50%, -50%) translate(-1px, -2px) scale(1.06); --d: calc(1.4 * var(--u)); }
-    .flavor:active { transform: translate(-50%, -50%) translate(calc(2.4 * var(--u)), calc(2.4 * var(--u))); --d: calc(0.3 * var(--u)); }
     .flavor:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
-    .flavor[aria-pressed="true"] { transform: translate(-50%, -50%) translate(calc(2.4 * var(--u)), calc(2.4 * var(--u))); --d: calc(0.3 * var(--u)); }
 
-    /* Phones: the titles go a bit bigger and the dots line up in a row at
-       the bottom, where thumbs can reach them. */
+    /* Name label that pops out next to a hovered dot: a cream speech bubble
+       with the same ink outline and stacked shadow as the dots. */
+    .flavor-label {
+      --px: var(--u);
+      position: absolute;
+      left: calc((var(--x) + 38) * var(--u));
+      top: calc(var(--y) * var(--u));
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .flavor-label__pill {
+      --d: calc(1.3 * var(--px));
+      position: relative;
+      display: block;
+      padding: 0 calc(11 * var(--px));
+      height: calc(28 * var(--px));
+      border: calc(2.5 * var(--px)) solid var(--ink);
+      border-radius: calc(9 * var(--px));
+      background: var(--frame-color);
+      color: var(--ink);
+      font: 800 calc(15 * var(--px)) / 1 Inter, Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+      line-height: calc(23 * var(--px));
+      letter-spacing: -0.01em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+      visibility: hidden;
+    }
+    /* The bubble's point: a turned square with ink on two sides, covering
+       the bubble's own border where it joins. */
+    .flavor-label__pill::before {
+      content: "";
+      position: absolute;
+      left: calc(-6.5 * var(--px));
+      top: 50%;
+      box-sizing: border-box;
+      width: calc(10 * var(--px));
+      height: calc(10 * var(--px));
+      margin-top: calc(-5 * var(--px));
+      background: var(--frame-color);
+      border-left: calc(2.5 * var(--px)) solid var(--ink);
+      border-bottom: calc(2.5 * var(--px)) solid var(--ink);
+      transform: rotate(45deg);
+    }
+
+    /* NEXT: the pink circle is drawn by the canvas (see uNext in toon.js);
+       this is its clickable area and the word on it, in the title lettering. */
+    .next {
+      --s: 1;
+      --lift: 0;
+      position: fixed;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .next:focus-visible { outline: 3px solid var(--ink); outline-offset: -12px; }
+    .next__word {
+      position: absolute;
+      /* From the circle's center, as in the mockup. */
+      left: calc(50% - 24 * var(--u));
+      top: calc(50% - 27 * var(--u));
+      transform: translate(-50%, -50%) rotate(calc(-9deg - var(--lift) * 3deg)) scale(var(--s));
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: calc(40 * var(--u));
+      line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      color: var(--frame-color);
+      white-space: nowrap;
+      filter: url(#title-small-ink);
+    }
+
+    /* Phones: the titles go a bit bigger and the dots line up in a row along
+       the bottom, where thumbs can reach them, leaving the corner for NEXT.
+       Labels pop up above the dots. */
     @media (max-width: 700px) {
       :root { --u: calc(100vw / 760); }
+      .flavor, .flavor-label { --px: 1px; }
       .flavor {
-        left: calc(50% + (var(--i) - 2) * 56px);
+        --shift-y: 0%;
+        left: calc(var(--frame-border) + 34px + var(--i) * 44px);
         top: auto;
         bottom: calc(var(--frame-border) + 28px + env(safe-area-inset-bottom, 0px));
-        width: 40px;
-        height: 40px;
-        border-width: 2.5px;
-        --d: 1px;
+        width: 32px;
+        height: 32px;
+        transform: translate(-50%, 0)
+          translate(calc(var(--press) * 2.4px - var(--lift) * 1px), calc(var(--press) * 2.4px - var(--lift) * 2px))
+          scale(var(--s));
+      }
+      .flavor-label {
+        left: calc(var(--frame-border) + 34px + var(--i) * 44px);
+        top: auto;
+        bottom: calc(var(--frame-border) + 28px + 48px + env(safe-area-inset-bottom, 0px));
         transform: translateX(-50%);
       }
-      .flavor:hover { transform: translateX(-50%) translate(-1px, -2px) scale(1.06); --d: 1.4px; }
-      .flavor:active, .flavor[aria-pressed="true"] { transform: translateX(-50%) translate(2.4px, 2.4px); --d: 0.3px; }
+      .flavor-label__pill::before {
+        left: 50%;
+        top: auto;
+        bottom: calc(-6.5 * var(--px));
+        margin: 0 0 0 calc(-5 * var(--px));
+        transform: rotate(-45deg);
+      }
+      .next__word {
+        left: calc(50% - 20px);
+        top: calc(50% - 20px);
+        font-size: 24px;
+      }
     }
 
     /* Mockup overlay for checking positions. */
@@ -150,7 +257,8 @@
     {
       "imports": {
         "three": "./vendor/three/three.module.js",
-        "three/addons/": "./vendor/three/addons/"
+        "three/addons/": "./vendor/three/addons/",
+        "gsap": "./vendor/gsap/index.js"
       }
     }
   </script>

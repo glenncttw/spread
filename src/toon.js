@@ -24,6 +24,9 @@ const toastSpace = { value: new THREE.Matrix4() };
 const holeUniforms = {
   uHoleAmount: { value: 0.25 }, // how many holes open up (0..1)
   uHoleSize: { value: 1 },
+  uHolePattern: { value: 0 }, // each whole number is a different layout of holes
+  uHoleStretch: { value: 1.4 }, // how much the holes are pulled out, like risen dough
+  uHoleWarp: { value: 1.1 }, // how lumpy and bent the holes are
 };
 
 export function createSharedUniforms() {
@@ -95,19 +98,23 @@ const halftoneGLSL = /* glsl */ `
   }
 `;
 
-// Shrink-and-grow for swapping the spread color. The spread stays a solid
-// shape: its edge is cut by a wobbly blob that shrinks toward the bottom left
-// until nothing is left, then the new color grows back out from the top right.
-// The outline pass sees the same cut, so the ink line follows the edge as it
-// moves. `uDissolve.x` is the progress (0..1); `uDissolve.y` is 0 while the
-// old color shrinks away and 1 while the new one grows in.
+// Swapping the spread color. Two shapes play at once: the old color shrinks
+// away toward the bottom left while the new one grows in from the top right
+// (after an optional delay), on top of it. Both stay solid shapes with an ink
+// line along their edges, and the outline pass sees the same cut, so the toast
+// outline follows the spread as it changes.
+// `uSwitch` is (out progress, in progress, 1 while a switch is playing).
+// Dir, seed and noise hold the out layer in .xy and the in layer in .zw.
 export function createDissolveUniforms() {
   return {
-    uDissolve: { value: new THREE.Vector2(0, 0) },
-    uDissolveDir: { value: new THREE.Vector2(-Math.SQRT1_2, -Math.SQRT1_2) },
-    uDissolveSeed: { value: new THREE.Vector2() },
-    uDissolveNoise: { value: new THREE.Vector2(2.5, 0.3) }, // scale, strength
+    uSwitch: { value: new THREE.Vector3(0, 0, 0) },
+    uDissolveDir: { value: new THREE.Vector4(-Math.SQRT1_2, -Math.SQRT1_2, -Math.SQRT1_2, -Math.SQRT1_2) },
+    uDissolveSeed: { value: new THREE.Vector4() },
+    uDissolveNoise: { value: new THREE.Vector4(2.5, 0.3, 2.5, 0.3) }, // scale, strength
     uDissolveTime: { value: 0 },
+    uOldBase: { value: new THREE.Color(palette.spread.base) },
+    uOldShade: { value: new THREE.Color(palette.spread.shade) },
+    uOldDots: { value: new THREE.Color(palette.spread.dots) },
     uCutInk: { value: new THREE.Color(palette.ink) },
     uCutWidth: { value: 3 }, // pixels
     uCenter: { value: new THREE.Vector3(0, 0.45, -0.17) },
@@ -117,11 +124,14 @@ export function createDissolveUniforms() {
 }
 
 const dissolveGLSL = /* glsl */ `
-  uniform vec2 uDissolve;
-  uniform vec2 uDissolveDir;
-  uniform vec2 uDissolveSeed;
-  uniform vec2 uDissolveNoise;
+  uniform vec3 uSwitch;
+  uniform vec4 uDissolveDir;
+  uniform vec4 uDissolveSeed;
+  uniform vec4 uDissolveNoise;
   uniform float uDissolveTime;
+  uniform vec3 uOldBase;
+  uniform vec3 uOldShade;
+  uniform vec3 uOldDots;
   uniform vec3 uCutInk;
   uniform float uCutWidth;
   uniform vec3 uCenter;
@@ -140,46 +150,50 @@ const dissolveGLSL = /* glsl */ `
                mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y);
   }
 
-  // How far inside the remaining shape this point is (negative = cut away).
-  // 1 while the switch shape is in charge, 0 at rest.
-  float dissolveBlend() {
-    return uDissolve.y < 0.5
-      ? smoothstep(0.0, 0.2, uDissolve.x)
-      : 1.0 - smoothstep(0.8, 1.0, uDissolve.x);
-  }
-  float dissolveMargin() {
-    if (uDissolve.y < 0.5 && uDissolve.x <= 0.0) return 1.0;
+  // 1 while a shape is in charge, 0 where it hands over to the resting spread
+  // (the start of "out", the end of "in"), so nothing snaps at either end.
+  float blendOut() { return smoothstep(0.0, 0.2, uSwitch.x); }
+  float blendIn() { return 1.0 - smoothstep(0.8, 1.0, uSwitch.y); }
+
+  // How far inside one layer's shape this point is (negative = outside).
+  float switchLayer(float progress, bool growing, vec2 screenDir, vec2 seed, vec2 nz, float blend) {
     // Work top-down on the toast (world x/z) so the cut behaves like a cookie
     // cutter: it slices straight down through the spread's rim instead of
     // leaving flat walls. The screen direction (top right to bottom left) is
     // turned into a direction across the toast for the current camera.
-    vec3 dirWorld = mat3(uToastInv) * (transpose(mat3(viewMatrix)) * vec3(uDissolveDir, 0.0));
+    vec3 dirWorld = mat3(uToastInv) * (transpose(mat3(viewMatrix)) * vec3(screenDir, 0.0));
     vec2 dir = normalize(dirWorld.xz + vec2(1e-5));
     vec2 rel = (vWorldPos.xz - uCenter.xz) / uRadius;
-    vec2 anchor = (uDissolve.y < 0.5 ? 0.6 : -0.6) * dir;
+    vec2 anchor = (growing ? -0.6 : 0.6) * dir;
     float d = length(rel - anchor);
-    vec2 q = rel * uDissolveNoise.x + uDissolveSeed + uDissolveTime * 0.6;
-    d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
+    vec2 q = rel * nz.x + seed + uDissolveTime * 0.6;
+    d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * nz.y;
 
     // Growing in, the blob gets big enough to cover the whole spread, so it
     // has filled out before the hand-off to the resting shape. Shrinking
-    // out it starts smaller, so the movement begins right away.
-    float maxR = (uDissolve.y < 0.5 ? 1.3 : 1.75) + uDissolveNoise.y * 0.5;
-    // Shrinking out ends a little below zero so the bumpiest edges are gone
-    // too by the last frame, instead of a last speck popping away.
-    float rEnd = -0.05 - uDissolveNoise.y * 0.5;
-    float r = uDissolve.y < 0.5 ? mix(maxR, rEnd, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
-    // Blend the shrinking blob with the spread's own rim using a smooth
-    // minimum, so where the two meet the shape rounds off instead of
-    // forming a sharp corner.
+    // out it starts smaller, so the movement begins right away, and it ends
+    // a little below zero so the bumpiest edges are gone by the last frame.
+    float maxR = (growing ? 1.75 : 1.3) + nz.y * 0.5;
+    float rEnd = -0.05 - nz.y * 0.5;
+    float r = growing ? mix(0.0, maxR, progress) : mix(maxR, rEnd, progress);
+    // Blend the blob with the spread's own rim using a smooth minimum, so
+    // where the two meet the shape rounds off instead of forming a corner.
     float blob = (r - d) * uRadius;
     float k = 0.4;
     float h = clamp(0.5 + 0.5 * (vEdge - blob) / k, 0.0, 1.0);
     float shape = mix(vEdge, blob, h) - k * h * (1.0 - h);
-    // Near the full-size end (the start of "out", the end of "in") ease the
-    // shape into the spread's own outline, so nothing snaps when the
-    // animation hands back to the resting spread.
-    return mix(vEdge, shape, dissolveBlend());
+    return mix(vEdge, shape, blend);
+  }
+  float marginOut() {
+    return switchLayer(uSwitch.x, false, uDissolveDir.xy, uDissolveSeed.xy, uDissolveNoise.xy, blendOut());
+  }
+  float marginIn() {
+    return switchLayer(uSwitch.y, true, uDissolveDir.zw, uDissolveSeed.zw, uDissolveNoise.zw, blendIn());
+  }
+  // What's left of the spread: the old color's shape and the new one's together.
+  float dissolveMargin() {
+    if (uSwitch.z < 0.5) return 1.0;
+    return max(marginOut(), marginIn());
   }
 `;
 
@@ -190,6 +204,9 @@ const dissolveGLSL = /* glsl */ `
 const holesGLSL = /* glsl */ `
   uniform float uHoleAmount;
   uniform float uHoleSize;
+  uniform float uHolePattern;
+  uniform float uHoleStretch;
+  uniform float uHoleWarp;
 
   float holeHash(vec3 p) {
     return fract(sin(dot(p, vec3(17.1, 113.5, 61.7))) * 43758.5453);
@@ -214,9 +231,13 @@ const holesGLSL = /* glsl */ `
   // cells open up (more in some patches than others). Returns the signed
   // distance to the nearest hole's edge (negative inside), in cell units.
   float holeDistance(vec2 p) {
+    // The pattern number shifts every noise lookup to a far-off spot, so each
+    // number gives a new layout (in between, the holes drift across).
+    vec2 seed = vec2(37.3, 91.7) * uHolePattern;
     vec2 q = p * 4.2 / uHoleSize;
-    q += (vec2(holeNoise(vec3(p * 2.0, 1.7)), holeNoise(vec3(p * 2.0, 8.3))) - 0.5) * 1.1;
-    q *= vec2(1.0, 1.4); // a little stretched, like risen dough
+    q += (vec2(holeNoise(vec3(p * 2.0 + seed, 1.7)), holeNoise(vec3(p * 2.0 + seed, 8.3))) - 0.5) * uHoleWarp;
+    q *= vec2(1.0, uHoleStretch); // a little stretched, like risen dough
+    q += seed;
     vec2 cell = floor(q);
     vec2 f = fract(q);
     float best = 8.0;
@@ -336,6 +357,13 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         return mix(color, shine, smoothstep(0.55, 0.6, spec) * uSpecular);
       }
 
+      vec3 inkDots; // the halftone dot color, picked per pixel in main()
+      #ifdef DISSOLVE
+        float inkLine(float m) {
+          return 1.0 - smoothstep(uCutWidth - 1.0, uCutWidth, m / max(fwidth(m), 1e-5));
+        }
+      #endif
+
       vec3 shadeWithHalftone(vec3 color, float dark) {
         vec2 fc = gl_FragCoord.xy;
         if (uColorMode == 1) {
@@ -359,17 +387,37 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
           color = mix(color, vec3(0.16, 0.32, 0.95), halftone(fc - o, uAngle, dark * 0.5) * 0.9);
           return color;
         }
-        return mix(color, uDots, halftone(fc, uAngle, dark));
+        return mix(color, inkDots, halftone(fc, uAngle, dark));
       }
 
       void main() {
+        vec3 base = uBase;
+        vec3 shade = uShade;
+        inkDots = uDots;
         #ifdef DISSOLVE
-          float margin = dissolveMargin();
-          if (margin < 0.0) discard;
-          // Ink along the cut edge, a few pixels wide whatever the zoom.
-          float cutLine = 1.0 - smoothstep(uCutWidth - 1.0, uCutWidth, margin / max(fwidth(margin), 1e-5));
-          // The cut line fades out as the shape settles back onto the rim.
-          cutLine *= dissolveBlend();
+          float cutLine = 0.0;
+          if (uSwitch.z > 0.5) {
+            float mOut = marginOut();
+            float mIn = marginIn();
+            if (max(mOut, mIn) < 0.0) discard;
+            // Ink along the cut edges, a few pixels wide whatever the zoom:
+            // around the outside of what's left, and where the new color
+            // meets the old one (drawn on the old color's side, so a shallow
+            // dip in the new shape never leaves a stray line inside it).
+            // Each line fades as its shape settles onto the rim.
+            float lineEdge = inkLine(max(mOut, mIn)) * blendIn();
+            float lineSeam = inkLine(-mIn) * blendIn();
+            float lineOut = inkLine(mOut) * blendOut();
+            if (mIn < 0.0) {
+              // Still the old color here.
+              base = uOldBase;
+              shade = uOldShade;
+              inkDots = uOldDots;
+              cutLine = max(lineOut, lineSeam);
+            } else {
+              cutLine = lineEdge;
+            }
+          }
         #endif
 
         vec3 N = normalize(vNormal);
@@ -384,7 +432,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         ndl += (noise3(q) * 0.65 + noise3(q * 2.7 + 11.0) * 0.35 - 0.5) * uShadowWobble * wobbleWeight;
 
         float lit = smoothstep(-0.02, 0.02, ndl);
-        vec3 color = mix(uShade, uBase, lit);
+        vec3 color = mix(shade, base, lit);
         float holeDark = 0.0;
         #ifdef HOLES
           // Halftone dots inside each hole, heavier along its upper lip.
@@ -510,6 +558,10 @@ export function createOutlineMaterial() {
       // Magnetic border: where the bulge is (CSS px, from the bottom left),
       // how strongly it's pulled right now (0..1), its width and its height.
       uMagnet: { value: new THREE.Vector2() },
+      // The NEXT button's circle: center (CSS px, from the bottom left) and
+      // radius; radius 0 hides it.
+      uNext: { value: new THREE.Vector3(0, 0, 0) },
+      uNextColor: { value: new THREE.Color('#ff71c3') },
       uMagnetStrength: { value: 0 },
       uMagnetSize: { value: 90 },
       uMagnetPull: { value: 24 },
@@ -552,6 +604,8 @@ export function createOutlineMaterial() {
       uniform vec3 uFrameColor;
       uniform vec3 uFrameInk;
       uniform vec2 uMagnet;
+      uniform vec3 uNext;
+      uniform vec3 uNextColor;
       uniform float uMagnetStrength;
       uniform float uMagnetSize;
       uniform float uMagnetPull;
@@ -753,6 +807,15 @@ export function createOutlineMaterial() {
           color = background(cssPx, bgUv, inner.x / inner.y);
         }
         color = mix(color, uInk, edge);
+        // NEXT: a flat pink circle in the corner with the frame's ink line,
+        // wobbling the same way. It sits over the scene and under the frame.
+        if (uNext.z > 0.0) {
+          float nextDist = length(cssPx + wobble * uWobble * 0.5 - uNext.xy) - uNext.z;
+          float nextFill = 1.0 - smoothstep(-aaPx, aaPx, nextDist);
+          float nextLine = 1.0 - smoothstep(uFrame.z * 0.5 - aaPx, uFrame.z * 0.5 + aaPx, abs(nextDist + uFrame.z * 0.5));
+          color = mix(color, uNextColor, nextFill);
+          color = mix(color, uFrameInk, nextLine);
+        }
         color = mix(uFrameColor, color, inside);
         // A touch of paper grain.
         color *= 1.0 - hash(floor(cssPx)) * 0.035;

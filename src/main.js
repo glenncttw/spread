@@ -19,6 +19,7 @@ import {
 } from './tweaks.js';
 import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
+import { createNextButton } from './ui.js';
 
 // The shaders work in display colors directly (see palette in toon.js).
 THREE.ColorManagement.enabled = false;
@@ -256,6 +257,7 @@ function resize() {
   normalTarget.setSize(w * dpr, h * dpr);
   outline.uniforms.uResolution.value.set(w * dpr, h * dpr);
   outline.uniforms.uPixelRatio.value = dpr;
+  next.layout(w, h);
   applyAll();
 }
 const settings = { ...defaults };
@@ -275,6 +277,9 @@ function applyAll() {
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
   materials['Purple Crumb'].uniforms.uHoleAmount.value = settings.holeAmount;
   materials['Purple Crumb'].uniforms.uHoleSize.value = settings.holeSize;
+  materials['Purple Crumb'].uniforms.uHolePattern.value = settings.holePattern;
+  materials['Purple Crumb'].uniforms.uHoleStretch.value = settings.holeStretch;
+  materials['Purple Crumb'].uniforms.uHoleWarp.value = settings.holeWarp;
   placeToast();
   if (letterRolls.length) leanLetters();
 }
@@ -289,6 +294,13 @@ const spreadSwitch = createSpreadSwitch({
     outEasing: settings.switchOutEasing,
     inEasing: settings.switchInEasing,
   }),
+  // Hold on to the current spread colors for the shape that shrinks away.
+  keepOldColor: () => {
+    const u = materials['Purple Spread'].uniforms;
+    dissolve.uOldBase.value.copy(u.uBase.value);
+    dissolve.uOldShade.value.copy(u.uShade.value);
+    dissolve.uOldDots.value.copy(u.uDots.value);
+  },
   setColor: (color) => {
     settings.spread = color;
     applyAll();
@@ -302,6 +314,13 @@ const panel = showPanel
       spreadSwitch.sync();
     }, overlay)
   : null;
+
+// The next step of the site isn't built yet, so NEXT only bounces for now.
+const next = createNextButton();
+function placeNext() {
+  const { x, y, radius } = next.current();
+  outline.uniforms.uNext.value.set(x, window.innerHeight - y, radius);
+}
 
 window.addEventListener('resize', resize);
 resize();
@@ -335,6 +354,7 @@ renderer.setAnimationLoop((now) => {
   followCursor(dt, now);
   floatToast(now / 1000);
   updateMagnet(dt);
+  placeNext();
   scene.updateMatrixWorld();
   if (model) shared.uToastInv.value.copy(model.matrixWorld).invert();
   updateLights(settings, shared, camera, controls.target);

@@ -4,9 +4,9 @@ A hand-drawn looking toast, rendered with Three.js.
 
 - `index.html` is the page. Open it through any static web server (for example `npx serve .`) or GitHub Pages.
 - `src/toon.js` holds the look: cel shading with halftone-dot shadows, and a post-processing pass that draws wobbly ink outlines from depth and normal edges (after Maxime Heckel's "Moebius" style post-processing).
-- The bread top has generative holes (warped cellular noise). The normal pass dips the surface inside each one, so the outline pass inks them with the same wobbly line as the toast; the color pass adds a few halftone dots inside ("Bread holes" sliders under Colors).
+- The bread top has generative holes (warped cellular noise). The normal pass dips the surface inside each one, so the outline pass inks them with the same wobbly line as the toast; the color pass adds a few halftone dots inside ("Bread holes" sliders under Colors: how many, size, pattern, stretch and lumpiness).
 - `assets/toast_purple.glb` is the model (decompressed from the original Draco file so no decoder is needed).
-- `vendor/three` is a pinned copy of Three.js r186, so the page has no build step.
+- `vendor/three` is a pinned copy of Three.js r186 and `vendor/gsap` a copy of GSAP 3.15 (its ES module files), so the page has no build step.
 
 Add `?still` to the URL to stop the cursor follow and line wiggle.
 
@@ -14,6 +14,6 @@ The scene sits in a rounded window inside a cream border (#FFEDCB, 20px border a
 
 The "Pick your spread" titles use BD Karlo (`assets/fonts`). Their positions, and the five flavor dots on the left, are measured off the 1440x800 mockup in CSS units of `--u` (one mockup pixel), so they match it at that size and scale with the window width. On phones the dots move to a row at the bottom. The titles' outline and shadow are SVG filters that grow one ink shape around all the letters together and stack five offset copies of it into an extruded shadow (the dots use the same five-step stack), and each letter of the big title leans a little at random ("Title" in the panel).
 
-Picking a dot shrinks the spread away as a solid outlined shape and grows the new flavor back in (`src/spreadSwitch.js`). The toast floats gently (tipping as it bobs) and turns toward the cursor a moment later with an eased, spring-like follow; the "Toast position" sliders place, turn and size it and set the float. When the cursor nears the edge, the cream border bulges toward it on a springy follow ("Magnetic border" in the Frame folder).
+Picking a dot swaps the spread with two solid outlined shapes at once: the old color shrinks away while the new one grows in over it, after an optional "In delay" (`src/spreadSwitch.js`, timed with a GSAP timeline). Hovering a dot bounces it and pops out its name in a speech bubble. The NEXT button in the bottom right corner is a pink circle drawn by the canvas under the frame, with the same bounce (`src/ui.js`); it doesn't go anywhere yet. The toast floats gently (tipping as it bobs) and turns toward the cursor a moment later with an eased, spring-like follow; the "Toast position" sliders place, turn and size it and set the float. When the cursor nears the edge, the cream border bulges toward it on a springy follow ("Magnetic border" in the Frame folder).
 
 "Layout overlay" in the panel lets you upload a mockup image and show it over the page (20% opacity by default) to check positions (`src/overlay.js`).

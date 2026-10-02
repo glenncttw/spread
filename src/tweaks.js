@@ -25,12 +25,12 @@ export const defaults = {
   secondHeight: 30,
   shadowWobble: 0.7,
   shadowWobbleSize: 2.5,
-  switchOut: 1.8,
+  switchOut: 1.4,
   switchGap: 0,
-  switchOutEasing: 'Random',
-  switchInEasing: 'Random',
-  switchIn: 1.8,
-  switchVariation: 0.5,
+  switchOutEasing: 'In cubic',
+  switchInEasing: 'Out cubic',
+  switchIn: 1.4,
+  switchVariation: 0.28,
   outlineColor: palette.ink,
   thickness: 2,
   squiggle: 1.1,
@@ -42,6 +42,9 @@ export const defaults = {
   spread: palette.spread.base,
   holeAmount: 0.25,
   holeSize: 1,
+  holePattern: 0,
+  holeStretch: 1.4,
+  holeWarp: 1.1,
   bgTop: palette.background[0],
   bgMiddle: palette.background[1],
   bgBottom: palette.background[2],
@@ -257,7 +260,7 @@ export function createTweakPanel(settings, onChange, overlay) {
   const switching = gui.addFolder('Spread switch');
   switching.add(settings, 'switchOut', 0.3, 5, 0.05).name('Out duration (s)');
   switching.add(settings, 'switchOutEasing', easingChoices).name('Out easing');
-  switching.add(settings, 'switchGap', 0, 2, 0.01).name('Delay before in (s)');
+  switching.add(settings, 'switchGap', 0, 3, 0.01).name('In delay (s)');
   switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('In duration (s)');
   switching.add(settings, 'switchInEasing', easingChoices).name('In easing');
   switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation (shape & speed)');
@@ -304,6 +307,9 @@ export function createTweakPanel(settings, onChange, overlay) {
   colors.addColor(settings, 'spread').name('Spread');
   colors.add(settings, 'holeAmount', 0, 1, 0.01).name('Bread holes: how many');
   colors.add(settings, 'holeSize', 0.3, 3, 0.05).name('Bread holes: size');
+  colors.add(settings, 'holePattern', 0, 20, 0.01).name('Bread holes: pattern');
+  colors.add(settings, 'holeStretch', 0.6, 2.5, 0.05).name('Bread holes: stretch');
+  colors.add(settings, 'holeWarp', 0, 2.5, 0.05).name('Bread holes: lumpiness');
 
   const actions = {
     copy() {
