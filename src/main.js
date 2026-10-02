@@ -3,15 +3,18 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   palette,
+  createSharedUniforms,
   createToonMaterial,
   createOutlineMaterial,
 } from './toon.js';
+import { defaults, applySettings, applySurfaceColor, createTweakPanel } from './tweaks.js';
 
 // The shaders work in display colors directly (see palette in toon.js).
 THREE.ColorManagement.enabled = false;
 
 const params = new URLSearchParams(location.search);
 const still = params.has('still'); // no auto-rotate or line boil, for screenshots
+const showPanel = !params.has('clean'); // ?clean hides the slider panel
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -34,10 +37,7 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.autoRotate = !still;
 controls.autoRotateSpeed = 0.8;
 
-const shared = {
-  uLightDir: { value: new THREE.Vector3(-0.6, 1.0, 0.45).normalize() },
-  uDotSize: { value: 6 },
-};
+const shared = createSharedUniforms();
 
 const materials = {
   'Purple Crumb': createToonMaterial(palette.crumb, shared),
@@ -85,8 +85,24 @@ function resize() {
   normalTarget.setSize(w * dpr, h * dpr);
   outline.uniforms.uResolution.value.set(w * dpr, h * dpr);
   outline.uniforms.uPixelRatio.value = dpr;
-  shared.uDotSize.value = 6 * dpr;
+  applyAll();
 }
+const settings = { ...defaults, spin: defaults.spin && !still };
+function applyAll() {
+  applySettings(settings, {
+    shared,
+    outline,
+    materials,
+    scene,
+    controls,
+    pixelRatio: renderer.getPixelRatio(),
+  });
+  applySurfaceColor(materials['Purple Crust'], settings.crust, palette.crust);
+  applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
+  applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
+}
+if (showPanel) createTweakPanel(settings, applyAll);
+
 window.addEventListener('resize', resize);
 resize();
 
@@ -109,3 +125,6 @@ renderer.setAnimationLoop(() => {
   renderer.setRenderTarget(null);
   renderer.render(quadScene, quadCamera);
 });
+
+// Handy from the browser console: change `toast.settings`, then call `toast.apply()`.
+window.toast = { settings, apply: applyAll };

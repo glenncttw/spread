@@ -10,31 +10,85 @@ export const palette = {
   spread: { base: '#a75bd1', shade: '#8c45b8', dots: '#55247a' },
 };
 
-// Halftone dots on a 45° screen-space grid. `dark` (0..1) sets the dot radius,
-// so shading reads as printed dots rather than a smooth gradient.
+// Everything the slider panel can change. Patterns and color modes are
+// numbered so the shader can switch on them.
+export const PATTERNS = { Dots: 0, Lines: 1, Crosshatch: 2, Squares: 3, Stipple: 4 };
+export const COLOR_MODES = { Tinted: 0, 'Single color': 1, 'CMY print': 2, RGB: 3 };
+
+export function createSharedUniforms() {
+  return {
+    uLightDir: { value: new THREE.Vector3() },
+    uDotSize: { value: 6 },
+    uPattern: { value: PATTERNS.Dots },
+    uColorMode: { value: COLOR_MODES.Tinted },
+    uAngle: { value: Math.PI / 4 },
+    uAmount: { value: 0.85 },
+    uReach: { value: 0.7 },
+    uSingleColor: { value: new THREE.Color(palette.ink) },
+    uShift: { value: 2 },
+    uShine: { value: 1 },
+    uGloss: { value: 60 },
+  };
+}
+
+// Screen-space halftone. `dark` (0..1) sets how much of each cell is inked,
+// so shading reads as print rather than a smooth gradient.
 const halftoneGLSL = /* glsl */ `
-  float halftone(vec2 fragCoord, float cellSize, float dark) {
-    vec2 p = fragCoord / cellSize;
-    p = mat2(0.7071, -0.7071, 0.7071, 0.7071) * p;
-    float d = length(fract(p) - 0.5);
-    float r = sqrt(clamp(dark, 0.0, 1.0)) * 0.72;
+  uniform float uDotSize;
+  uniform int uPattern;
+
+  float hash21(vec2 p) {
+    return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453);
+  }
+
+  float halftone(vec2 fragCoord, float angle, float dark) {
+    dark = clamp(dark, 0.0, 1.0);
+    if (dark < 0.02) return 0.0;
+    float c = cos(angle), s = sin(angle);
+    vec2 p = mat2(c, -s, s, c) * fragCoord / uDotSize;
+    vec2 cell = fract(p) - 0.5;
+
+    if (uPattern == 1) { // Lines
+      float d = abs(cell.y);
+      float aa = fwidth(p.y) * 0.75;
+      return 1.0 - smoothstep(dark * 0.5 - aa, dark * 0.5 + aa, d);
+    }
+    if (uPattern == 2) { // Crosshatch: a second set of lines joins in the darker areas
+      float aa = fwidth(p.y) * 0.75;
+      float w1 = min(dark, 0.6) * 0.45;
+      float w2 = max(dark - 0.35, 0.0) * 0.45;
+      float a = 1.0 - smoothstep(w1 - aa, w1 + aa, abs(cell.y));
+      float b = 1.0 - smoothstep(w2 - aa, w2 + aa, abs(cell.x));
+      return max(a, w2 > 0.0 ? b : 0.0);
+    }
+    if (uPattern == 3) { // Squares
+      float d = max(abs(cell.x), abs(cell.y));
+      float r = sqrt(dark) * 0.5;
+      float aa = fwidth(d) * 0.75;
+      return 1.0 - smoothstep(r - aa, r + aa, d);
+    }
+    if (uPattern == 4) { // Stipple: random specks, denser where darker
+      vec2 g = floor(fragCoord / max(uDotSize * 0.3, 1.0));
+      return step(hash21(g), dark * 0.85);
+    }
+    // Dots
+    float d = length(cell);
+    float r = sqrt(dark) * 0.72;
     float aa = fwidth(d) * 0.75;
-    return (1.0 - smoothstep(r - aa, r + aa, d)) * step(0.02, dark);
+    return 1.0 - smoothstep(r - aa, r + aa, d);
   }
 `;
 
-// Cel shading: a hard light/shade split, halftone dots (a deeper tone of the
-// surface color) creeping in as the surface turns away from the light, and an
-// optional glossy highlight.
+// Cel shading: a hard light/shade split, halftone shading creeping in as the
+// surface turns away from the light, and an optional glossy highlight.
 export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) {
   return new THREE.ShaderMaterial({
     uniforms: {
+      ...shared,
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
       uDots: { value: new THREE.Color(dots) },
       uSpecular: { value: specular },
-      uLightDir: shared.uLightDir,
-      uDotSize: shared.uDotSize,
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
@@ -52,10 +106,44 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
       uniform vec3 uDots;
       uniform vec3 uLightDir;
       uniform float uSpecular;
-      uniform float uDotSize;
+      uniform int uColorMode;
+      uniform float uAngle;
+      uniform float uAmount;
+      uniform float uReach;
+      uniform vec3 uSingleColor;
+      uniform float uShift;
+      uniform float uShine;
+      uniform float uGloss;
       varying vec3 vNormal;
       varying vec3 vViewDir;
       ${halftoneGLSL}
+
+      vec3 shadeWithHalftone(vec3 color, float dark) {
+        vec2 fc = gl_FragCoord.xy;
+        if (uColorMode == 1) {
+          return mix(color, uSingleColor, halftone(fc, uAngle, dark));
+        }
+        if (uColorMode == 2) {
+          // Cyan, magenta and yellow screens at classic print angles, printed over each other.
+          float c = halftone(fc, uAngle + 0.2618, dark);
+          float m = halftone(fc, uAngle + 1.309, dark);
+          float y = halftone(fc, uAngle, dark * 0.8);
+          color *= mix(vec3(1.0), vec3(0.0, 0.68, 0.93), c * 0.6);
+          color *= mix(vec3(1.0), vec3(0.93, 0.0, 0.55), m * 0.6);
+          color *= mix(vec3(1.0), vec3(1.0, 0.92, 0.0), y * 0.6);
+          return color;
+        }
+        if (uColorMode == 3) {
+          // Red, green and blue dot screens at different angles, nudged out of register.
+          vec2 o = vec2(uShift * uDotSize / 6.0, 0.0);
+          color = mix(color, vec3(0.96, 0.18, 0.25), halftone(fc + o, uAngle + 0.2618, dark * 0.5) * 0.9);
+          color = mix(color, vec3(0.1, 0.72, 0.42), halftone(fc, uAngle + 1.309, dark * 0.5) * 0.9);
+          color = mix(color, vec3(0.16, 0.32, 0.95), halftone(fc - o, uAngle, dark * 0.5) * 0.9);
+          return color;
+        }
+        return mix(color, uDots, halftone(fc, uAngle, dark));
+      }
+
       void main() {
         vec3 N = normalize(vNormal);
         vec3 L = normalize(uLightDir);
@@ -65,15 +153,15 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
         float lit = smoothstep(-0.02, 0.02, ndl);
         vec3 color = mix(uShade, uBase, lit);
 
-        float dark = (1.0 - smoothstep(-0.6, 0.7, ndl)) * 0.85;
-        color = mix(color, uDots, halftone(gl_FragCoord.xy, uDotSize, dark));
+        float dark = (1.0 - smoothstep(-0.6, uReach, ndl)) * uAmount;
+        color = shadeWithHalftone(color, dark);
 
-        // Glossy highlight: a solid core with a ring of light dots around it.
-        float spec = pow(max(dot(N, normalize(L + V)), 0.0), 24.0);
+        // Glossy highlight: a small solid core with a ring of light dots around it.
+        float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss);
         vec3 shine = vec3(1.0, 0.97, 0.99);
-        float glow = smoothstep(0.12, 0.45, spec) * 0.8;
-        color = mix(color, shine, halftone(gl_FragCoord.xy + 0.5 * uDotSize, uDotSize, glow) * uSpecular);
-        color = mix(color, shine, smoothstep(0.45, 0.5, spec) * uSpecular);
+        float glow = smoothstep(0.03, 0.55, spec) * 0.8 * uShine;
+        color = mix(color, shine, halftone(gl_FragCoord.xy + 0.5 * uDotSize, uAngle, glow) * uSpecular);
+        color = mix(color, shine, smoothstep(0.55, 0.6, spec) * uSpecular);
 
         gl_FragColor = vec4(color, 1.0);
       }

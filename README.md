@@ -7,4 +7,6 @@ A hand-drawn looking toast, rendered with Three.js.
 - `assets/toast_purple.glb` is the model (decompressed from the original Draco file so no decoder is needed).
 - `vendor/three` is a pinned copy of Three.js r186, so the page has no build step.
 
-Add `?still` to the URL to stop the rotation and line boil.
+Add `?still` to the URL to stop the rotation and line wiggle.
+
+A slider panel ("Tweak the look") sits in the top right for trying halftone patterns, colors, light and outlines. "Copy settings" copies the current values so they can be made the new defaults in `src/tweaks.js`. Add `?clean` to the URL to hide the panel.
