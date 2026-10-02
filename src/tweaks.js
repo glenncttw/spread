@@ -60,7 +60,7 @@ export const defaults = {
   // with the window width from there.
   frameBorder: 20,
   frameRadius: 32,
-  frameLine: 2,
+  frameLine: 3.5,
   frameColor: '#ffedcb',
   frameInk: palette.ink,
   magnet: true,
@@ -158,7 +158,7 @@ function updateTitleInk(s, f) {
   for (const [id, [dx, dy]] of Object.entries(sizes)) {
     const filter = document.getElementById(id);
     if (!filter) continue;
-    filter.querySelector('feMorphology').setAttribute('radius', (f.line * 1.5).toFixed(2));
+    filter.querySelector('feMorphology').setAttribute('radius', Math.max(f.line * 0.9, 2).toFixed(2));
     filter.querySelector('feFlood').setAttribute('flood-color', s.frameInk);
     filter.querySelectorAll('feOffset').forEach((offset) => {
       const step = Number(offset.dataset.step);

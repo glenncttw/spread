@@ -1,40 +1,51 @@
 // Springy UI: hover bounces, the flavor labels and the NEXT button.
-// GSAP drives these; it tweens CSS custom properties (--s for scale, --lift
-// for how far a button rises off the page) that the CSS in index.html turns
-// into the actual transform and shadow, so the layout itself stays in CSS.
+// GSAP drives these. It tweens the --s custom property (hover size), which
+// the CSS in index.html turns into the actual size, so the layout stays in CSS.
 import { gsap } from 'gsap';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const phone = window.matchMedia('(max-width: 700px)');
 
-// Hover grows the element with an elastic overshoot, pressing squashes it a
-// little and letting go springs it back.
+// Hover grows the element with one springy overshoot and settles back the
+// same way. The listeners go on a hit area that doesn't change size, so the
+// growing dot can't slip out from under the cursor and retrigger itself.
+// Keyboard focus counts as hover; a mouse click's focus doesn't.
 export function bounce(el, { grow = 1.2, onHover, onLeave } = {}) {
-  gsap.set(el, { '--s': 1, '--lift': 0 });
-  let hovered = false;
-  const to = (vars) => gsap.to(el, { overwrite: 'auto', ...vars });
-  const springy = () => (reducedMotion.matches ? 'power2.out' : 'elastic.out(1.1, 0.35)');
+  gsap.set(el, { '--s': 1 });
+  let pointer = false;
+  let keyboard = false;
+  let shown = false;
 
-  function enter() {
-    if (hovered) return;
-    hovered = true;
-    to({ '--s': grow, '--lift': 1, duration: 0.9, ease: springy() });
-    onHover?.();
-  }
-  function leave() {
-    if (!hovered) return;
-    hovered = false;
-    to({ '--s': 1, '--lift': 0, duration: 0.7, ease: reducedMotion.matches ? 'power2.out' : 'elastic.out(1, 0.45)' });
-    onLeave?.();
+  function update() {
+    const on = pointer || keyboard;
+    if (on === shown) return;
+    shown = on;
+    gsap.to(el, {
+      '--s': on ? grow : 1,
+      duration: reducedMotion.matches ? 0.15 : 0.5,
+      ease: reducedMotion.matches ? 'power1.out' : 'back.out(3)',
+      overwrite: 'auto',
+    });
+    (on ? onHover : onLeave)?.();
   }
 
-  el.addEventListener('pointerenter', enter);
-  el.addEventListener('pointerleave', leave);
-  el.addEventListener('focus', enter);
-  el.addEventListener('blur', leave);
-  el.addEventListener('pointerdown', () => to({ '--s': grow * 0.88, duration: 0.12, ease: 'power2.out' }));
-  el.addEventListener('pointerup', () => to({ '--s': hovered ? grow : 1, duration: 0.8, ease: springy() }));
-  return { enter, leave };
+  el.addEventListener('pointerenter', (e) => {
+    if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return; // touch has no hover
+    pointer = true;
+    update();
+  });
+  el.addEventListener('pointerleave', () => {
+    pointer = false;
+    update();
+  });
+  el.addEventListener('focus', () => {
+    keyboard = el.matches(':focus-visible');
+    update();
+  });
+  el.addEventListener('blur', () => {
+    keyboard = false;
+    update();
+  });
 }
 
 // A speech-bubble label that pops out next to its button.
@@ -43,32 +54,24 @@ export function popLabel(label) {
   gsap.set(pill, { autoAlpha: 0 });
   return {
     show() {
-      const fromSide = !phone.matches;
+      const side = !phone.matches;
       gsap.fromTo(
         pill,
-        { autoAlpha: 0, scale: 0.4, x: fromSide ? -10 : 0, y: fromSide ? 0 : 8, rotation: fromSide ? -8 : 0 },
+        { autoAlpha: 0, scale: 0.6, x: side ? -8 : 0, y: side ? 0 : 6 },
         {
           autoAlpha: 1,
           scale: 1,
           x: 0,
           y: 0,
-          rotation: 0,
-          transformOrigin: fromSide ? '0% 50%' : '50% 100%',
-          duration: reducedMotion.matches ? 0.2 : 0.6,
-          ease: reducedMotion.matches ? 'power2.out' : 'elastic.out(1, 0.5)',
-          overwrite: 'auto',
+          transformOrigin: side ? '0% 50%' : '50% 100%',
+          duration: reducedMotion.matches ? 0.15 : 0.4,
+          ease: reducedMotion.matches ? 'power1.out' : 'back.out(2.5)',
+          overwrite: true,
         },
       );
     },
     hide() {
-      gsap.to(pill, {
-        autoAlpha: 0,
-        scale: 0.7,
-        x: phone.matches ? 0 : -6,
-        duration: 0.18,
-        ease: 'power2.in',
-        overwrite: 'auto',
-      });
+      gsap.to(pill, { autoAlpha: 0, duration: 0.15, ease: 'power1.in', overwrite: true });
     },
   };
 }
@@ -83,7 +86,7 @@ export function createNextButton({ onClick } = {}) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'next';
-  button.innerHTML = '<span class="next__word" aria-hidden="true">Next</span>';
+  button.innerHTML = '<span class="next__ink" aria-hidden="true"><span class="next__word">Next</span></span>';
   button.setAttribute('aria-label', 'Next');
   document.body.append(button);
   bounce(button, { grow: 1.07 });

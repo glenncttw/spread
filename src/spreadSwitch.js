@@ -9,11 +9,11 @@ import { bounce, popLabel } from './ui.js';
 
 // x/y are the dot centers on the 1440px-wide mockup.
 export const flavors = [
-  { name: 'Strawberry', color: '#f74b4b', x: 220, y: 279 },
-  { name: 'Grape', color: '#df4bf7', x: 235, y: 339 },
-  { name: 'Mint', color: '#2ff4b1', x: 250.5, y: 399, swatch: 'linear-gradient(160deg, #4ef27a, #1ef0ee)' },
-  { name: 'Chocolate', color: '#52311a', x: 235, y: 459 },
-  { name: 'Blueberry', color: '#8793ff', x: 219.5, y: 519 },
+  { name: 'Love', color: '#f2434b', x: 220, y: 279 }, // strawberry red
+  { name: 'Joy', color: '#ffd23f', x: 235, y: 339 }, // yellow
+  { name: 'Calm', color: '#8ccdf5', x: 250.5, y: 399 }, // soft sky blue
+  { name: 'Growth', color: '#a6d96a', x: 235, y: 459 }, // pistachio green
+  { name: 'Friendship', color: '#e4447f', x: 219.5, y: 519 }, // raspberry pink
 ];
 
 // Easing curves to pick from in the panel ("Spread switch").
@@ -71,14 +71,16 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     item.style.setProperty('--x', flavor.x);
     item.style.setProperty('--y', flavor.y);
     item.style.setProperty('--i', i);
-    button.style.setProperty('--color', flavor.swatch ?? flavor.color);
+    button.style.setProperty('--color', flavor.color);
+    button.innerHTML = '<span class="flavor__dot"></span>';
     button.addEventListener('click', () => switchTo(i));
 
     const label = document.createElement('span');
     label.className = 'flavor-label';
     label.setAttribute('aria-hidden', 'true');
-    label.innerHTML = '<span class="flavor-label__pill"></span>';
-    label.firstElementChild.textContent = flavor.name;
+    label.innerHTML =
+      '<span class="flavor-label__pill"><span class="flavor-label__bubble"></span><span class="flavor-label__text"></span></span>';
+    label.querySelector('.flavor-label__text').textContent = flavor.name;
     const pop = popLabel(label);
     bounce(button, { grow: 1.2, onHover: pop.show, onLeave: pop.hide });
 
@@ -87,11 +89,11 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     return button;
   });
 
-  // The picked dot sits pressed into the page; the press springs in and out.
+  // The picked dot sits pressed into the page.
   function press(button, pressed) {
     if (button.getAttribute('aria-pressed') === String(pressed)) return;
     button.setAttribute('aria-pressed', String(pressed));
-    gsap.to(button, { '--press': pressed ? 1 : 0, duration: 0.5, ease: 'elastic.out(1, 0.5)', overwrite: 'auto' });
+    gsap.to(button, { '--press': pressed ? 1 : 0, duration: 0.25, ease: 'power2.out' });
   }
   buttons.forEach((b) => gsap.set(b, { '--press': 0 }));
 

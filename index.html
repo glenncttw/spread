@@ -75,47 +75,60 @@
       pointer-events: none;
     }
     .flavor {
-      /* --px is one design pixel: the 1440px mockup's on big screens, a real
-         pixel on phones. GSAP (src/ui.js) tweens --s (hover scale), --lift
-         (rises off the page on hover) and --press (pushed in when picked). */
+      /* The button is a fixed-size hit area; the dot inside it is what you
+         see. --px is one design pixel: the 1440px mockup's on big screens, a
+         real pixel on phones. --dot is the dot's size. GSAP (src/ui.js)
+         tweens --s (hover size) and --press (pushed in when picked). */
       --px: var(--u);
-      --shift-y: -50%;
+      --dot: calc(40 * var(--u));
       --s: 1;
-      --lift: 0;
       --press: 0;
       position: absolute;
       left: calc(var(--x) * var(--u));
       top: calc(var(--y) * var(--u));
-      width: calc(40 * var(--u));
-      height: calc(40 * var(--u));
-      min-width: 22px;
-      min-height: 22px;
-      transform: translate(-50%, var(--shift-y))
-        translate(calc(var(--press) * 2.4 * var(--px) - var(--lift) * 1px), calc(var(--press) * 2.4 * var(--px) - var(--lift) * 2px))
-        scale(var(--s));
+      width: calc(var(--dot) * 1.25);
+      height: calc(var(--dot) * 1.25);
+      min-width: 28px;
+      min-height: 28px;
+      transform: translate(-50%, -50%);
       padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      cursor: pointer;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .flavor:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+    /* The dot grows by changing its size rather than scaling, so its ink
+       outline and shadow keep the same thickness. */
+    .flavor__dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      box-sizing: border-box;
+      width: max(calc(var(--dot) * var(--s)), 22px);
+      height: max(calc(var(--dot) * var(--s)), 22px);
+      transform: translate(-50%, -50%) translate(calc(var(--press) * 2.4 * var(--px)), calc(var(--press) * 2.4 * var(--px)));
       border: calc(2.5 * var(--px)) solid var(--ink);
       border-radius: 50%;
       background: var(--color);
       /* Five stacked hard shadows (Glenn's Figma offsets at 1440px: 0.68,
          1.35, 2, 2.71 and 3.39) blend into one extruded edge. --d scales the
-         whole stack: deeper when lifted, shallow when pressed in. */
-      --d: calc((1 + 0.4 * var(--lift) - 0.7 * var(--press)) * var(--px));
+         whole stack, and it gets shallow when the dot is pressed in. */
+      --d: calc((1 - 0.7 * var(--press)) * var(--px));
       box-shadow:
         calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
         calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
         calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
         calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
         calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
-      cursor: pointer;
-      pointer-events: auto;
       filter: url(#ink-wobble);
-      -webkit-tap-highlight-color: transparent;
     }
-    .flavor:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
 
     /* Name label that pops out next to a hovered dot: a cream speech bubble
-       with the same ink outline and stacked shadow as the dots. */
+       with the same ink outline and stacked shadow as the dots. Only the
+       bubble gets the wobbly ink; the word stays crisp. */
     .flavor-label {
       --px: var(--u);
       position: absolute;
@@ -125,20 +138,34 @@
       pointer-events: none;
     }
     .flavor-label__pill {
-      --d: calc(1.3 * var(--px));
       position: relative;
-      display: block;
-      padding: 0 calc(11 * var(--px));
+      display: flex;
+      align-items: center;
       height: calc(28 * var(--px));
-      border: calc(2.5 * var(--px)) solid var(--ink);
-      border-radius: calc(9 * var(--px));
-      background: var(--frame-color);
+      padding: 0 calc(13.5 * var(--px));
       color: var(--ink);
       font: 800 calc(15 * var(--px)) / 1 Inter, Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
-      line-height: calc(23 * var(--px));
       letter-spacing: -0.01em;
       text-transform: uppercase;
       white-space: nowrap;
+      visibility: hidden;
+    }
+    .flavor-label__text {
+      position: relative;
+      /* Center on the capital letters, not the line box (which leaves room
+         for descenders and so sits uppercase text too high). */
+      text-box: trim-both cap alphabetic;
+    }
+    @supports not (text-box: trim-both cap alphabetic) {
+      .flavor-label__text { padding-top: 0.14em; }
+    }
+    .flavor-label__bubble {
+      --d: calc(1.3 * var(--px));
+      position: absolute;
+      inset: 0;
+      border: calc(2.5 * var(--px)) solid var(--ink);
+      border-radius: calc(9 * var(--px));
+      background: var(--frame-color);
       box-shadow:
         calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
         calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
@@ -146,11 +173,10 @@
         calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
         calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
       filter: url(#ink-wobble);
-      visibility: hidden;
     }
     /* The bubble's point: a turned square with ink on two sides, covering
        the bubble's own border where it joins. */
-    .flavor-label__pill::before {
+    .flavor-label__bubble::before {
       content: "";
       position: absolute;
       left: calc(-6.5 * var(--px));
@@ -166,10 +192,11 @@
     }
 
     /* NEXT: the pink circle is drawn by the canvas (see uNext in toon.js);
-       this is its clickable area and the word on it, in the title lettering. */
+       this is its clickable area and the word on it, in the title lettering.
+       The ink filter sits on a wrapper so it's drawn after the word grows,
+       keeping the outline the same thickness. */
     .next {
       --s: 1;
-      --lift: 0;
       position: fixed;
       padding: 0;
       border: 0;
@@ -179,12 +206,17 @@
       -webkit-tap-highlight-color: transparent;
     }
     .next:focus-visible { outline: 3px solid var(--ink); outline-offset: -12px; }
+    .next__ink {
+      position: absolute;
+      inset: 0;
+      filter: url(#title-small-ink);
+    }
     .next__word {
       position: absolute;
       /* From the circle's center, as in the mockup. */
       left: calc(50% - 24 * var(--u));
       top: calc(50% - 27 * var(--u));
-      transform: translate(-50%, -50%) rotate(calc(-9deg - var(--lift) * 3deg)) scale(var(--s));
+      transform: translate(-50%, -50%) rotate(-9deg) scale(var(--s));
       font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
       font-size: calc(40 * var(--u));
       line-height: 1;
@@ -192,7 +224,6 @@
       text-transform: uppercase;
       color: var(--frame-color);
       white-space: nowrap;
-      filter: url(#title-small-ink);
     }
 
     /* Phones: the titles go a bit bigger and the dots line up in a row along
@@ -202,15 +233,11 @@
       :root { --u: calc(100vw / 760); }
       .flavor, .flavor-label { --px: 1px; }
       .flavor {
-        --shift-y: 0%;
+        --dot: 32px;
         left: calc(var(--frame-border) + 34px + var(--i) * 44px);
         top: auto;
-        bottom: calc(var(--frame-border) + 28px + env(safe-area-inset-bottom, 0px));
-        width: 32px;
-        height: 32px;
-        transform: translate(-50%, 0)
-          translate(calc(var(--press) * 2.4px - var(--lift) * 1px), calc(var(--press) * 2.4px - var(--lift) * 2px))
-          scale(var(--s));
+        bottom: calc(var(--frame-border) + 24px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
       }
       .flavor-label {
         left: calc(var(--frame-border) + 34px + var(--i) * 44px);
@@ -218,7 +245,7 @@
         bottom: calc(var(--frame-border) + 28px + 48px + env(safe-area-inset-bottom, 0px));
         transform: translateX(-50%);
       }
-      .flavor-label__pill::before {
+      .flavor-label__bubble::before {
         left: 50%;
         top: auto;
         bottom: calc(-6.5 * var(--px));
