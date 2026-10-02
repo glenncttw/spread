@@ -109,7 +109,7 @@ follow.add(bob);
 scene.add(travel);
 
 // The entrance, played as the loading screen lifts: the toast starts far
-// back, stood up at 90°, and comes forward while it turns twice around and
+// back, tipped over by 180°, and comes forward while it turns twice around and
 // tips down onto its resting angle, with cream streaks whipping round it.
 // `intro.t` runs 0..1.
 const intro = { t: 0 };
@@ -119,9 +119,9 @@ function showIntro() {
   const t = intro.t;
   const away = new THREE.Vector3();
   camera.getWorldDirection(away);
-  travel.position.copy(away).multiplyScalar(10 * (1 - t) ** 2);
+  travel.position.copy(away).multiplyScalar(18 * (1 - t) ** 2);
   const turn = Math.PI * 4 * (1 - t);
-  spin.rotation.set((Math.PI / 2) * (1 - Math.min(t * 1.15, 1)) ** 2, turn, 0, 'YXZ');
+  spin.rotation.set(Math.PI * (1 - Math.min(t * 1.15, 1)) ** 2, turn, 0, 'YXZ');
   streaks.update(t, turn);
 }
 showIntro();
