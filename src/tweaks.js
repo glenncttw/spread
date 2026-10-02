@@ -37,6 +37,8 @@ export const defaults = {
   crust: palette.crust.base,
   crumb: palette.crumb.base,
   spread: palette.spread.base,
+  holeAmount: 0.45,
+  holeSize: 1,
   bgTop: palette.background[0],
   bgMiddle: palette.background[1],
   bgBottom: palette.background[2],
@@ -62,7 +64,7 @@ export const defaults = {
   floatAmount: 0.5,
   floatSpeed: 1,
   floatTilt: 1,
-  followDelay: 0.12,
+  followDelay: 0.06,
   letterLean: 5,
   // Where the toast sits. Positions are in scene units, angles in degrees.
   toastX: 0,
@@ -74,7 +76,7 @@ export const defaults = {
   toastSize: 1,
   followCursor: true,
   followAmount: 14,
-  followSmooth: 0.45,
+  followSmooth: 0.35,
   orbit: false,
   spin: false,
 };
@@ -152,8 +154,11 @@ function updateTitleInk(s, f) {
     if (!filter) continue;
     filter.querySelector('feMorphology').setAttribute('radius', (f.line * 1.5).toFixed(2));
     filter.querySelector('feFlood').setAttribute('flood-color', s.frameInk);
-    filter.querySelector('feOffset').setAttribute('dx', (dx * u).toFixed(2));
-    filter.querySelector('feOffset').setAttribute('dy', (dy * u).toFixed(2));
+    filter.querySelectorAll('feOffset').forEach((offset) => {
+      const step = Number(offset.dataset.step);
+      offset.setAttribute('dx', (dx * u * step).toFixed(2));
+      offset.setAttribute('dy', (dy * u * step).toFixed(2));
+    });
   }
 }
 
@@ -292,6 +297,8 @@ export function createTweakPanel(settings, onChange, overlay) {
   colors.addColor(settings, 'crust').name('Crust');
   colors.addColor(settings, 'crumb').name('Bread');
   colors.addColor(settings, 'spread').name('Spread');
+  colors.add(settings, 'holeAmount', 0, 1, 0.01).name('Bread holes: how many');
+  colors.add(settings, 'holeSize', 0.3, 3, 0.05).name('Bread holes: size');
 
   const actions = {
     copy() {

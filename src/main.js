@@ -52,7 +52,7 @@ const shared = createSharedUniforms();
 const dissolve = createDissolveUniforms();
 
 const materials = {
-  'Purple Crumb': createToonMaterial(palette.crumb, shared),
+  'Purple Crumb': createToonMaterial({ ...palette.crumb, holes: true }, shared),
   'Purple Crust': createToonMaterial(palette.crust, shared),
   'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared, dissolve),
 };
@@ -270,6 +270,8 @@ function applyAll() {
   applySurfaceColor(materials['Purple Crust'], settings.crust, palette.crust);
   applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
+  materials['Purple Crumb'].uniforms.uHoleAmount.value = settings.holeAmount;
+  materials['Purple Crumb'].uniforms.uHoleSize.value = settings.holeSize;
   placeToast();
   if (letterRolls.length) leanLetters();
 }

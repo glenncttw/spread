@@ -6,7 +6,7 @@ export const palette = {
   paper: '#f4ecdc',
   background: ['#ff71c3', '#ff9c41', '#9cdd33'], // top, middle, bottom
   ink: '#211d1e',
-  crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e' },
+  crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e', hole: '#ecc98f', holeShadow: '#d6a663' },
   crust: { base: '#c46a2c', shade: '#a9531f', dots: '#6e2c0e' },
   spread: { base: '#a75bd1', shade: '#8c45b8', dots: '#55247a' },
 };
@@ -176,12 +176,19 @@ const dissolveGLSL = /* glsl */ `
 
 // Cel shading: a hard light/shade split, halftone shading creeping in as the
 // surface turns away from the light, and an optional glossy highlight.
-export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, dissolve) {
+export function createToonMaterial({ base, shade, dots, specular = 0, holes = false }, shared, dissolve) {
+  const defines = {};
+  if (dissolve) defines.DISSOLVE = '';
+  if (holes) defines.HOLES = '';
   return new THREE.ShaderMaterial({
-    defines: dissolve ? { DISSOLVE: '' } : {},
+    defines,
     uniforms: {
       ...shared,
       ...dissolve,
+      uHoleColor: { value: new THREE.Color(palette.crumb.hole) },
+      uHoleShadow: { value: new THREE.Color(palette.crumb.holeShadow) },
+      uHoleAmount: { value: 0.45 }, // share of spots that get a hole
+      uHoleSize: { value: 1 },
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
       uDots: { value: new THREE.Color(dots) },
@@ -254,6 +261,52 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
         ${dissolveGLSL}
       #endif
 
+      #ifdef HOLES
+        uniform vec3 uHoleColor;
+        uniform vec3 uHoleShadow;
+        uniform float uHoleAmount;
+        uniform float uHoleSize;
+
+        vec4 holeHash(vec2 c) {
+          return fract(sin(vec4(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)),
+                                dot(c, vec2(419.2, 371.9)), dot(c, vec2(23.7, 97.1)))) * 43758.5453);
+        }
+
+        // Bread holes, like a flat illustration: a few scattered ovals, some
+        // with a little one beside them. Returns x = inside a hole (0..1) and
+        // y = inside its shaded upper-left lip.
+        vec2 one(vec2 local, vec2 r, float aa) {
+          float d = length(local / r) - 1.0;
+          float lip = length((local - vec2(-0.22, 0.28) * r) / (r * 0.95)) - 1.0;
+          float inside = 1.0 - smoothstep(-aa, aa, d * min(r.x, r.y));
+          float shade = inside * smoothstep(-aa, aa, lip * min(r.x, r.y));
+          return vec2(inside, shade);
+        }
+        vec2 breadHoles(vec2 p) {
+          const float cellSize = 0.32;
+          vec2 cell = floor(p / cellSize);
+          float aa = fwidth(p.x) + fwidth(p.y);
+          vec2 result = vec2(0.0);
+          for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+              vec2 c = cell + vec2(x, y);
+              vec4 h = holeHash(c);
+              if (h.x > uHoleAmount) continue;
+              vec2 center = (c + 0.2 + 0.6 * h.yz) * cellSize;
+              float angle = h.w * 6.2832;
+              mat2 turn = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+              vec2 r = vec2(1.45, 1.0) * (0.03 + 0.03 * h.y) * uHoleSize;
+              vec2 local = turn * (p - center);
+              vec2 a = one(local, r, aa);
+              // Sometimes a small companion hole nearby.
+              if (h.z > 0.45) a = max(a, one(local - vec2(r.x * 2.1, r.y * 0.4), r * 0.45, aa));
+              result = max(result, a);
+            }
+          }
+          return result;
+        }
+      #endif
+
       // Glossy highlight: a small solid core with a ring of light dots around it.
       // Only on the rounded edges of the spread: the flat top (normal pointing
       // straight up) never shines, so it can't turn white when seen from above.
@@ -315,6 +368,12 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
 
         float lit = smoothstep(-0.02, 0.02, ndl);
         vec3 color = mix(uShade, uBase, lit);
+        #ifdef HOLES
+          // Only on the flat top of the bread, not down the sides.
+          vec2 hole = breadHoles(vWorldPos.xz) * smoothstep(0.6, 0.8, N.y);
+          color = mix(color, uHoleColor * mix(0.92, 1.0, lit), hole.x);
+          color = mix(color, uHoleShadow * mix(0.92, 1.0, lit), hole.y);
+        #endif
 
         float dark = (1.0 - smoothstep(-0.6, uReach, ndl)) * uAmount;
         color = shadeWithHalftone(color, dark);
