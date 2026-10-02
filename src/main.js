@@ -17,12 +17,13 @@ import {
   createTweakPanel,
 } from './tweaks.js';
 import { createSpreadSwitch } from './spreadSwitch.js';
+import { createOverlay } from './overlay.js';
 
 // The shaders work in display colors directly (see palette in toon.js).
 THREE.ColorManagement.enabled = false;
 
 const params = new URLSearchParams(location.search);
-const still = params.has('still'); // no auto-rotate or line boil, for screenshots
+const still = params.has('still'); // no cursor follow or line boil, for screenshots
 const showPanel = !params.has('clean'); // ?clean hides the slider panel
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -43,7 +44,6 @@ controls.enablePan = false;
 controls.minDistance = 3;
 controls.maxDistance = 10;
 controls.maxPolarAngle = Math.PI * 0.48;
-controls.autoRotate = !still;
 controls.autoRotateSpeed = 0.8;
 
 const shared = createSharedUniforms();
@@ -83,6 +83,16 @@ function addEdgeDistance(geometry) {
   geometry.setAttribute('edgeDist', new THREE.BufferAttribute(dist, 1));
 }
 
+// The toast hangs from two groups: `placement` takes the position sliders,
+// `follow` adds the small turn toward the cursor. The model is offset so both
+// turn it around its own middle.
+const placement = new THREE.Group();
+const follow = new THREE.Group();
+placement.add(follow);
+scene.add(placement);
+let model = null;
+const modelCenter = new THREE.Vector3();
+
 const meshes = [];
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
@@ -94,8 +104,44 @@ new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
     if (name === 'Purple Spread') addEdgeDistance(child.geometry);
     meshes.push(child);
   });
-  scene.add(gltf.scene);
+  model = gltf.scene;
+  new THREE.Box3().setFromObject(model).getCenter(modelCenter);
+  model.position.copy(modelCenter).negate();
+  follow.add(model);
+  placeToast();
 });
+
+function placeToast() {
+  const deg = THREE.MathUtils.degToRad;
+  placement.position.set(
+    modelCenter.x + settings.toastX,
+    modelCenter.y + settings.toastY,
+    modelCenter.z + settings.toastZ,
+  );
+  placement.rotation.set(deg(settings.toastTilt), deg(settings.toastTurn), deg(settings.toastRoll), 'YXZ');
+  placement.scale.setScalar(settings.toastSize);
+}
+
+// Cursor position across the window, -1..1 on each axis.
+const pointer = new THREE.Vector2();
+window.addEventListener('pointermove', (event) => {
+  pointer.set((event.clientX / window.innerWidth) * 2 - 1, (event.clientY / window.innerHeight) * 2 - 1);
+});
+document.addEventListener('pointerleave', () => pointer.set(0, 0));
+
+let lastFrame = performance.now();
+function followCursor(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  const on = settings.followCursor && !still;
+  const amount = THREE.MathUtils.degToRad(settings.followAmount);
+  const targetTurn = on ? pointer.x * amount : 0;
+  const targetTilt = on ? -pointer.y * amount * 0.6 : 0;
+  // Frame-rate independent easing; "smoothness" 0 snaps, 0.95 drifts slowly.
+  const ease = 1 - Math.pow(1 - THREE.MathUtils.lerp(1, 0.02, settings.followSmooth), dt * 60);
+  follow.rotation.y += (targetTurn - follow.rotation.y) * ease;
+  follow.rotation.x += (targetTilt - follow.rotation.x) * ease;
+}
 
 // Render targets: the toon-shaded color, and normals + depth for finding edges.
 const colorTarget = new THREE.WebGLRenderTarget(1, 1, { samples: 4 });
@@ -131,7 +177,7 @@ function resize() {
   outline.uniforms.uPixelRatio.value = dpr;
   applyAll();
 }
-const settings = { ...defaults, spin: defaults.spin && !still };
+const settings = { ...defaults };
 function applyAll() {
   applySettings(settings, {
     shared,
@@ -146,6 +192,7 @@ function applyAll() {
   applySurfaceColor(materials['Purple Crust'], settings.crust, palette.crust);
   applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
+  placeToast();
 }
 const spreadSwitch = createSpreadSwitch({
   dissolve,
@@ -162,23 +209,36 @@ const spreadSwitch = createSpreadSwitch({
     panel?.controllersRecursive().forEach((c) => c.updateDisplay());
   },
 });
+const overlay = createOverlay();
 const panel = showPanel
   ? createTweakPanel(settings, () => {
       applyAll();
       spreadSwitch.sync();
-    })
+    }, overlay)
   : null;
 
 window.addEventListener('resize', resize);
 resize();
 
-renderer.setAnimationLoop(() => {
+// Re-roll the wobble on the HTML titles and buttons in step with the line boil.
+const wobble = document.querySelector('#ink-wobble feTurbulence');
+let wobbleFrame = -1;
+
+renderer.setAnimationLoop((now) => {
   controls.update();
+  followCursor(now);
+  scene.updateMatrixWorld();
+  if (model) shared.uToastInv.value.copy(model.matrixWorld).invert();
   updateLights(settings, shared, camera, controls.target);
   const time = still ? 0 : performance.now() / 1000;
   outline.uniforms.uTime.value = time;
   dissolve.uDissolveTime.value = time;
   outline.uniforms.uBgTime.value = time * settings.bgSpeed;
+  const boilFrame = Math.floor(time * settings.boil);
+  if (wobble && boilFrame !== wobbleFrame) {
+    wobbleFrame = boilFrame;
+    wobble.setAttribute('seed', String(1 + (boilFrame % 7)));
+  }
 
   renderer.setRenderTarget(colorTarget);
   renderer.render(scene, camera);
@@ -197,4 +257,12 @@ renderer.setAnimationLoop(() => {
 });
 
 // Handy from the browser console: change `toast.settings`, then call `toast.apply()`.
-window.toast = { settings, apply: applyAll, camera, controls, dissolve, switchSpread: () => spreadSwitch.switchSpread() };
+window.toast = {
+  settings,
+  apply: applyAll,
+  camera,
+  controls,
+  dissolve,
+  overlay,
+  switchSpread: () => spreadSwitch.switchSpread(),
+};

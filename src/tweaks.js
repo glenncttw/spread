@@ -53,7 +53,19 @@ export const defaults = {
   frameLine: 2,
   frameColor: '#ffedcb',
   frameInk: palette.ink,
-  spin: true,
+  // Where the toast sits. Positions are in scene units, angles in degrees.
+  toastX: 0,
+  toastY: -0.3,
+  toastZ: 0,
+  toastTurn: 0,
+  toastTilt: 0,
+  toastRoll: 0,
+  toastSize: 1,
+  followCursor: true,
+  followAmount: 14,
+  followSmooth: 0.5,
+  orbit: false,
+  spin: false,
 };
 
 export function applySettings(s, { shared, outline, materials, scene, controls, pixelRatio }) {
@@ -97,6 +109,7 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   root.setProperty('--frame-color', s.frameColor);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', s.frameColor);
   controls.autoRotate = s.spin;
+  controls.enabled = s.orbit;
 }
 
 // The frame scales with the window width (the sizes are set for 1440px),
@@ -146,8 +159,30 @@ export function applySurfaceColor(material, hex, original) {
   u.uDots.value.set(hex).multiplyScalar(0.5);
 }
 
-export function createTweakPanel(settings, onChange) {
+export function createTweakPanel(settings, onChange, overlay) {
   const gui = new GUI({ title: 'Tweak the look', width: 280 });
+
+  const place = gui.addFolder('Toast position');
+  place.add(settings, 'toastX', -3, 3, 0.01).name('Left / right');
+  place.add(settings, 'toastY', -2, 2, 0.01).name('Down / up');
+  place.add(settings, 'toastZ', -3, 3, 0.01).name('Back / front');
+  place.add(settings, 'toastTurn', -180, 180, 1).name('Turn');
+  place.add(settings, 'toastTilt', -90, 90, 1).name('Tilt');
+  place.add(settings, 'toastRoll', -90, 90, 1).name('Roll');
+  place.add(settings, 'toastSize', 0.3, 2.5, 0.01).name('Size');
+  place.add(settings, 'followCursor').name('Follows the cursor');
+  place.add(settings, 'followAmount', 0, 45, 1).name('Follow amount (°)');
+  place.add(settings, 'followSmooth', 0, 0.95, 0.01).name('Follow smoothness');
+  place.add(settings, 'orbit').name('Drag to orbit camera');
+  place.add(settings, 'spin').name('Spin');
+
+  if (overlay) {
+    const layout = gui.addFolder('Layout overlay');
+    layout.add(overlay, 'upload').name('Upload image…');
+    const show = layout.add(overlay.state, 'show').name('Show overlay').onChange(overlay.render);
+    layout.add(overlay.state, 'opacity', 0, 1, 0.01).name('Opacity').onChange(overlay.render);
+    overlay.onLoaded(() => show.updateDisplay());
+  }
 
   const shading = gui.addFolder('Halftone shading');
   shading.add(settings, 'pattern', Object.keys(PATTERNS)).name('Pattern');
@@ -209,7 +244,6 @@ export function createTweakPanel(settings, onChange) {
   colors.addColor(settings, 'crust').name('Crust');
   colors.addColor(settings, 'crumb').name('Bread');
   colors.addColor(settings, 'spread').name('Spread');
-  colors.add(settings, 'spin').name('Spin');
 
   const actions = {
     copy() {

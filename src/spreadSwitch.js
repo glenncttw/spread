@@ -1,16 +1,16 @@
-// The "switch spread" button: the current spread shrinks away toward the
-// bottom left as a solid shape, and once it is gone the next flavor grows in
-// from the top right. Each
-// switch rolls a slightly different noise pattern, direction, speed and easing
-// so it never plays out quite the same twice.
+// The spread picker: five dots down the left. Picking one shrinks the
+// current spread away toward the bottom left as a solid shape, and once it is
+// gone the new flavor grows in from the top right. Each switch rolls a
+// slightly different noise pattern, direction, speed and easing so it never
+// plays out quite the same twice.
 
+// x/y are the dot centers on the 1440px-wide mockup.
 export const flavors = [
-  { name: 'Blueberry', color: '#a75bd1' },
-  { name: 'Strawberry', color: '#e5485f' },
-  { name: 'Apricot', color: '#f39a2b' },
-  { name: 'Pistachio', color: '#8cc063' },
-  { name: 'Hazelnut', color: '#8a4b2d' },
-  { name: 'Blue raspberry', color: '#3f7fe0' },
+  { name: 'Strawberry', color: '#f74b4b', x: 220, y: 279 },
+  { name: 'Grape', color: '#df4bf7', x: 235, y: 339 },
+  { name: 'Mint', color: '#2ff4b1', x: 250.5, y: 399, swatch: 'linear-gradient(160deg, #4ef27a, #1ef0ee)' },
+  { name: 'Chocolate', color: '#52311a', x: 235, y: 459 },
+  { name: 'Blueberry', color: '#8793ff', x: 219.5, y: 519 },
 ];
 
 const easings = {
@@ -54,30 +54,41 @@ function roll(dissolve, variation) {
 }
 
 export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) {
-  let index = Math.max(0, flavors.findIndex((f) => f.color === getColor()));
   let busy = false;
+  let queued = null;
 
-  const button = document.createElement('button');
-  button.className = 'spread-switch';
-  button.type = 'button';
-  const swatch = document.createElement('span');
-  swatch.className = 'spread-switch__swatch';
-  const label = document.createElement('span');
-  button.append(swatch, label);
-  document.body.appendChild(button);
+  const list = document.querySelector('.flavors');
+  const buttons = flavors.map((flavor, i) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'flavor';
+    button.setAttribute('aria-label', flavor.name);
+    button.title = flavor.name;
+    button.style.setProperty('--x', flavor.x);
+    button.style.setProperty('--y', flavor.y);
+    button.style.setProperty('--i', i);
+    button.style.setProperty('--color', flavor.swatch ?? flavor.color);
+    button.addEventListener('click', () => switchTo(i));
+    item.append(button);
+    list?.append(item);
+    return button;
+  });
 
-  function showNext() {
-    const next = flavors[(index + 1) % flavors.length];
-    swatch.style.background = next.color;
-    label.textContent = `Switch to ${next.name.toLowerCase()}`;
+  function sync() {
+    const current = getColor().toLowerCase();
+    buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(flavors[i].color === current)));
   }
-  showNext();
+  sync();
 
-  async function switchSpread() {
-    if (busy) return;
+  async function switchTo(i) {
+    if (flavors[i].color === getColor().toLowerCase() && !busy) return;
+    if (busy) {
+      queued = i; // play the latest pick once this switch finishes
+      return;
+    }
     busy = true;
-    button.disabled = true;
-    index = (index + 1) % flavors.length;
+    buttons.forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
 
     const { outSeconds, gapSeconds, inSeconds, variation } = getTiming();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -89,7 +100,7 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) 
     const outEase = variation > 0 ? pick(outEasings) : 'inOutCubic';
     await tween(vary(outSeconds, outSeconds * 0.2, variation) * 1000 * speed, easings[outEase], (t) => p.set(t, 0));
 
-    setColor(flavors[index].color);
+    setColor(flavors[i].color);
     await wait(gapSeconds * 1000 * speed);
 
     roll(dissolve, variation);
@@ -98,15 +109,20 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) 
     await tween(vary(inSeconds, inSeconds * 0.2, variation) * 1000 * speed, easings[inEase], (t) => p.set(t, 1));
     p.set(0, 0);
 
-    showNext();
     busy = false;
-    button.disabled = false;
+    sync();
+    if (queued !== null) {
+      const next = queued;
+      queued = null;
+      switchTo(next);
+    }
   }
 
-  button.addEventListener('click', switchSpread);
-  return { button, switchSpread, sync: () => {
-    const i = flavors.findIndex((f) => f.color === getColor());
-    if (i >= 0) index = i;
-    showNext();
-  } };
+  // Next flavor in the list, for the console helper.
+  function switchSpread() {
+    const i = flavors.findIndex((f) => f.color === getColor().toLowerCase());
+    return switchTo((i + 1) % flavors.length);
+  }
+
+  return { switchTo, switchSpread, sync };
 }

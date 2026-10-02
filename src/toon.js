@@ -16,8 +16,13 @@ export const palette = {
 export const PATTERNS = { Dots: 0, Lines: 1, Crosshatch: 2, Squares: 3, Stipple: 4 };
 export const COLOR_MODES = { Tinted: 0, 'Single color': 1, 'CMY print': 2, RGB: 3 };
 
+// World space to "toast space" (where the toast sits before it's moved),
+// shared by every material. main.js updates it whenever the toast moves.
+const toastSpace = { value: new THREE.Matrix4() };
+
 export function createSharedUniforms() {
   return {
+    uToastInv: toastSpace,
     uLightDir: { value: new THREE.Vector3() },
     uDotSize: { value: 6 },
     uPattern: { value: PATTERNS.Dots },
@@ -101,6 +106,7 @@ export function createDissolveUniforms() {
     uCutWidth: { value: 3 }, // pixels
     uCenter: { value: new THREE.Vector3(0, 0.45, -0.17) },
     uRadius: { value: 1.3 },
+    uToastInv: toastSpace,
   };
 }
 
@@ -114,6 +120,7 @@ const dissolveGLSL = /* glsl */ `
   uniform float uCutWidth;
   uniform vec3 uCenter;
   uniform float uRadius;
+  uniform mat4 uToastInv;
   varying float vEdge; // distance to the spread's own rim, in world units
 
   float dHash(vec2 p) {
@@ -140,7 +147,7 @@ const dissolveGLSL = /* glsl */ `
     // cutter: it slices straight down through the spread's rim instead of
     // leaving flat walls. The screen direction (top right to bottom left) is
     // turned into a direction across the toast for the current camera.
-    vec3 dirWorld = transpose(mat3(viewMatrix)) * vec3(uDissolveDir, 0.0);
+    vec3 dirWorld = mat3(uToastInv) * (transpose(mat3(viewMatrix)) * vec3(uDissolveDir, 0.0));
     vec2 dir = normalize(dirWorld.xz + vec2(1e-5));
     vec2 rel = (vWorldPos.xz - uCenter.xz) / uRadius;
     vec2 anchor = (uDissolve.y < 0.5 ? 0.6 : -0.6) * dir;
@@ -185,13 +192,16 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
       varying vec3 vViewDir;
       varying vec3 vViewPos;
       varying vec3 vWorldPos;
+      uniform mat4 uToastInv;
       #ifdef DISSOLVE
         attribute float edgeDist;
         varying float vEdge;
       #endif
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
+        // Position on the toast as it sits unmoved, so noise and the switch
+        // shape stay stuck to the toast however it's placed or turned.
+        vWorldPos = (uToastInv * worldPos).xyz;
         vNormal = normalize(mat3(modelMatrix) * normal);
         vViewDir = cameraPosition - worldPos.xyz;
         vec4 viewPos = viewMatrix * worldPos;
@@ -332,12 +342,15 @@ export function createNormalMaterial(dissolve) {
       varying vec3 vViewNormal;
       varying vec3 vWorldPos;
       #ifdef DISSOLVE
+        uniform mat4 uToastInv;
         attribute float edgeDist;
         varying float vEdge;
       #endif
       void main() {
         vViewNormal = normalize(normalMatrix * normal);
-        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        #ifdef DISSOLVE
+          vWorldPos = (uToastInv * modelMatrix * vec4(position, 1.0)).xyz;
+        #endif
         vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
         #ifdef DISSOLVE
           vEdge = edgeDist;

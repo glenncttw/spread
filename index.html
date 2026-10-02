@@ -19,36 +19,114 @@
     }
     html, body { margin: 0; height: 100%; background: var(--frame-color); overflow: hidden; }
     canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-    .spread-switch {
+    @font-face {
+      font-family: "BD Karlo";
+      src: url("./assets/fonts/BDKarlo.woff2") format("woff2");
+      font-display: block;
+    }
+    /* --u is one pixel of the 1440px-wide design, so everything below can be
+       measured straight off the mockup and still scales with the window. */
+    :root { --u: calc(100vw / 1440); }
+
+    .title {
       position: fixed;
-      left: 50%;
-      bottom: calc(var(--frame-border) + 1.5rem + env(safe-area-inset-bottom, 0px));
-      transform: translateX(-50%);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.625rem;
-      padding: 0.625rem 1.125rem 0.625rem 0.625rem;
-      border: 0.156rem solid var(--ink);
-      border-radius: 999px;
-      background: #fffaf0;
-      color: var(--ink);
-      font: 700 1rem/1 ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
-      box-shadow: 0.19rem 0.19rem 0 var(--ink);
-      cursor: pointer;
-      white-space: nowrap;
-      transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.2s ease;
+      inset: 0 0 auto 0;
+      margin: 0;
+      pointer-events: none;
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-weight: normal;
+      color: var(--frame-color);
+      text-transform: uppercase;
+      line-height: 1;
+      paint-order: stroke fill;
+      -webkit-text-stroke-color: var(--ink);
+      filter: url(#ink-wobble);
     }
-    .spread-switch:hover { transform: translate(-50%, -1px); box-shadow: 0.25rem 0.25rem 0 var(--ink); }
-    .spread-switch:active { transform: translate(-50%, 2px); box-shadow: 0.06rem 0.06rem 0 var(--ink); }
-    .spread-switch:focus-visible { outline: 3px solid #a75bd1; outline-offset: 3px; }
-    .spread-switch:disabled { opacity: 0.6; cursor: default; }
-    .spread-switch__swatch {
-      width: 1.375rem;
-      height: 1.375rem;
+    .title span { position: absolute; left: 0; right: 0; text-align: center; white-space: nowrap; }
+    .title__small {
+      top: calc(var(--title-small-top, 83) * var(--u));
+      font-size: calc(var(--title-small-size, 38.5) * var(--u));
+      letter-spacing: calc(var(--title-small-spacing, 0.6) * var(--u));
+      -webkit-text-stroke-width: calc(5 * var(--u));
+      text-shadow: calc(3 * var(--u)) calc(3.5 * var(--u)) 0 var(--ink);
+      transform: translateX(calc(var(--title-small-x, 0) * var(--u))) rotate(calc(var(--title-small-rotate, 0) * 1deg));
+    }
+    .title__big {
+      top: calc(var(--title-big-top, 113) * var(--u));
+      font-size: calc(var(--title-big-size, 147) * var(--u));
+      letter-spacing: calc(var(--title-big-spacing, 4.5) * var(--u));
+      -webkit-text-stroke-width: calc(9 * var(--u));
+      text-shadow: calc(6 * var(--u)) calc(8 * var(--u)) 0 var(--ink);
+      transform-origin: 50% 50%;
+      transform: translateX(calc(var(--title-big-x, -4) * var(--u)))
+        perspective(calc(900 * var(--u)))
+        rotateY(calc(var(--title-big-turn, -5) * 1deg))
+        rotate(calc(var(--title-big-rotate, 3.5) * 1deg));
+    }
+
+    /* Spread picker: five ink-outlined dots on a gentle curve. */
+    .flavors {
+      position: fixed;
+      inset: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      pointer-events: none;
+    }
+    .flavor {
+      position: absolute;
+      left: calc(var(--x) * var(--u));
+      top: calc(var(--y) * var(--u));
+      width: calc(40 * var(--u));
+      height: calc(40 * var(--u));
+      min-width: 22px;
+      min-height: 22px;
+      transform: translate(-50%, -50%);
+      padding: 0;
+      border: calc(2.5 * var(--u)) solid var(--ink);
       border-radius: 50%;
-      border: 0.125rem solid var(--ink);
-      transition: background 0.3s ease;
+      background: var(--color);
+      box-shadow: calc(6 * var(--u)) calc(6 * var(--u)) 0 var(--ink);
+      cursor: pointer;
+      pointer-events: auto;
+      filter: url(#ink-wobble);
+      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
     }
+    .flavor:hover { transform: translate(-50%, -50%) translate(-1px, -2px) scale(1.06); box-shadow: calc(8 * var(--u)) calc(8 * var(--u)) 0 var(--ink); }
+    .flavor:active { transform: translate(-50%, -50%) translate(3px, 3px); box-shadow: calc(2 * var(--u)) calc(2 * var(--u)) 0 var(--ink); }
+    .flavor:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+    .flavor[aria-pressed="true"] { transform: translate(-50%, -50%) translate(3px, 3px); box-shadow: calc(2 * var(--u)) calc(2 * var(--u)) 0 var(--ink); }
+
+    /* Phones: the titles go a bit bigger and the dots line up in a row at
+       the bottom, where thumbs can reach them. */
+    @media (max-width: 700px) {
+      :root { --u: calc(100vw / 760); }
+      .flavor {
+        left: calc(50% + (var(--i) - 2) * 56px);
+        top: auto;
+        bottom: calc(var(--frame-border) + 28px + env(safe-area-inset-bottom, 0px));
+        width: 40px;
+        height: 40px;
+        border-width: 2.5px;
+        box-shadow: 4px 4px 0 var(--ink);
+        transform: translateX(-50%);
+      }
+      .flavor:hover { transform: translateX(-50%) translate(-1px, -2px) scale(1.06); box-shadow: 5px 5px 0 var(--ink); }
+      .flavor:active, .flavor[aria-pressed="true"] { transform: translateX(-50%) translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+    }
+
+    /* Mockup overlay for checking positions. */
+    .layout-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .layout-overlay[hidden] { display: none; }
+
     /* Keep the slider panel inside the frame. */
     .lil-gui.autoPlace {
       top: calc(var(--frame-border) + 0.75rem);
@@ -68,6 +146,18 @@
   </script>
 </head>
 <body>
+  <h1 class="title" aria-label="Pick your spread">
+    <span class="title__small" aria-hidden="true">Pick your</span>
+    <span class="title__big" aria-hidden="true">Spread</span>
+  </h1>
+  <ul class="flavors" aria-label="Spread flavors"></ul>
+  <!-- Gives the titles and buttons the same hand-drawn wobble as the toast. -->
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <filter id="ink-wobble" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="1" seed="1" />
+      <feDisplacementMap in="SourceGraphic" scale="2" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </svg>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
