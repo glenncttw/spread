@@ -28,6 +28,8 @@ export function createSharedUniforms() {
     uShift: { value: 2 },
     uShine: { value: 1 },
     uGloss: { value: 60 },
+    uLightDir2: { value: new THREE.Vector3() },
+    uShine2: { value: 1 },
   };
 }
 
@@ -79,12 +81,65 @@ const halftoneGLSL = /* glsl */ `
   }
 `;
 
+// Dissolve for swapping the spread color. The front sweeps across the spread
+// in screen directions (top right to bottom left by default), roughened by
+// noise, and leaves a trail of halftone dots behind it. `uDissolve.x` is the
+// progress (0..1); `uDissolve.y` is 0 while the color fades out and 1 while
+// the new one fades in.
+export function createDissolveUniforms() {
+  return {
+    uDissolve: { value: new THREE.Vector2(0, 0) },
+    uDissolveDir: { value: new THREE.Vector2(-Math.SQRT1_2, -Math.SQRT1_2) },
+    uDissolveSeed: { value: new THREE.Vector2() },
+    uDissolveNoise: { value: new THREE.Vector2(2.5, 0.3) }, // scale, strength
+    uCenter: { value: new THREE.Vector3(0, 0.45, -0.17) },
+    uRadius: { value: 1.3 },
+  };
+}
+
+const dissolveGLSL = /* glsl */ `
+  uniform vec2 uDissolve;
+  uniform vec2 uDissolveDir;
+  uniform vec2 uDissolveSeed;
+  uniform vec2 uDissolveNoise;
+  uniform vec3 uCenter;
+  uniform float uRadius;
+  varying vec3 vViewPos;
+
+  float dHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float dNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(dHash(i), dHash(i + vec2(1.0, 0.0)), f.x),
+               mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+
+  // 1 = fully there, 0 = gone, in between = the dotted edge of the front.
+  float dissolveVisibility() {
+    vec3 center = (viewMatrix * vec4(uCenter, 1.0)).xyz;
+    vec2 rel = (vViewPos.xy - center.xy) / uRadius;
+    float s = dot(rel, uDissolveDir) * 0.5 + 0.5;
+    vec2 q = rel * uDissolveNoise.x + uDissolveSeed;
+    s += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
+    float front = mix(-0.75, 1.75, uDissolve.x);
+    float band = 0.2;
+    return uDissolve.y < 0.5
+      ? clamp((s - front) / band, 0.0, 1.0)
+      : clamp((front - s) / band, 0.0, 1.0);
+  }
+`;
+
 // Cel shading: a hard light/shade split, halftone shading creeping in as the
 // surface turns away from the light, and an optional glossy highlight.
-export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) {
+export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, dissolve) {
   return new THREE.ShaderMaterial({
+    defines: dissolve ? { DISSOLVE: '' } : {},
     uniforms: {
       ...shared,
+      ...dissolve,
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
       uDots: { value: new THREE.Color(dots) },
@@ -93,11 +148,14 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
       varying vec3 vViewDir;
+      varying vec3 vViewPos;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vNormal = normalize(mat3(modelMatrix) * normal);
         vViewDir = cameraPosition - worldPos.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 viewPos = viewMatrix * worldPos;
+        vViewPos = viewPos.xyz;
+        gl_Position = projectionMatrix * viewPos;
       }
     `,
     fragmentShader: /* glsl */ `
@@ -114,9 +172,26 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
       uniform float uShift;
       uniform float uShine;
       uniform float uGloss;
+      uniform vec3 uLightDir2;
+      uniform float uShine2;
       varying vec3 vNormal;
       varying vec3 vViewDir;
       ${halftoneGLSL}
+      #ifdef DISSOLVE
+        ${dissolveGLSL}
+      #endif
+
+      // Glossy highlight: a small solid core with a ring of light dots around it.
+      // Only on the rounded edges of the spread: the flat top (normal pointing
+      // straight up) never shines, so it can't turn white when seen from above.
+      vec3 addShine(vec3 color, vec3 N, vec3 V, vec3 L, float amount, vec2 dotOffset) {
+        float edge = 1.0 - smoothstep(0.88, 0.96, N.y);
+        float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss) * edge * amount;
+        vec3 shine = vec3(1.0, 0.97, 0.99);
+        float glow = smoothstep(0.03, 0.55, spec) * 0.8 * uShine;
+        color = mix(color, shine, halftone(gl_FragCoord.xy + dotOffset, uAngle, glow) * uSpecular);
+        return mix(color, shine, smoothstep(0.55, 0.6, spec) * uSpecular);
+      }
 
       vec3 shadeWithHalftone(vec3 color, float dark) {
         vec2 fc = gl_FragCoord.xy;
@@ -145,6 +220,11 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
       }
 
       void main() {
+        #ifdef DISSOLVE
+          float visible = dissolveVisibility();
+          if (visible < 0.999 && halftone(gl_FragCoord.xy, uAngle, visible) < 0.5) discard;
+        #endif
+
         vec3 N = normalize(vNormal);
         vec3 L = normalize(uLightDir);
         vec3 V = normalize(vViewDir);
@@ -156,17 +236,42 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
         float dark = (1.0 - smoothstep(-0.6, uReach, ndl)) * uAmount;
         color = shadeWithHalftone(color, dark);
 
-        // Glossy highlight: a small solid core with a ring of light dots around it.
-        // Only on the rounded edges of the spread: the flat top (normal pointing
-        // straight up) never shines, so it can't turn white when seen from above.
-        float edge = 1.0 - smoothstep(0.88, 0.96, N.y);
-        float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss) * edge;
-        vec3 shine = vec3(1.0, 0.97, 0.99);
-        float glow = smoothstep(0.03, 0.55, spec) * 0.8 * uShine;
-        color = mix(color, shine, halftone(gl_FragCoord.xy + 0.5 * uDotSize, uAngle, glow) * uSpecular);
-        color = mix(color, shine, smoothstep(0.55, 0.6, spec) * uSpecular);
+        color = addShine(color, N, V, L, 1.0, vec2(0.5 * uDotSize));
+        color = addShine(color, N, V, normalize(uLightDir2), uShine2, vec2(0.0));
 
         gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+  });
+}
+
+// Normals for the outline pass (same packing as THREE.MeshNormalMaterial).
+// The spread's version hides whatever the dissolve has eaten, so its outline
+// follows the solid part of the spread.
+export function createNormalMaterial(dissolve) {
+  return new THREE.ShaderMaterial({
+    defines: dissolve ? { DISSOLVE: '' } : {},
+    uniforms: { ...dissolve },
+    vertexShader: /* glsl */ `
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
+      void main() {
+        vViewNormal = normalize(normalMatrix * normal);
+        vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = viewPos.xyz;
+        gl_Position = projectionMatrix * viewPos;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vViewNormal;
+      #ifdef DISSOLVE
+        ${dissolveGLSL}
+      #endif
+      void main() {
+        #ifdef DISSOLVE
+          if (dissolveVisibility() < 0.999) discard;
+        #endif
+        gl_FragColor = vec4(normalize(vViewNormal) * 0.5 + 0.5, 1.0);
       }
     `,
   });

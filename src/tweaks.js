@@ -14,10 +14,14 @@ export const defaults = {
   amount: 0.85,
   reach: 0.7,
   rgbShift: 2,
-  lightAround: 143,
+  lightAround: 88,
   lightHeight: 52,
+  followCamera: true,
   highlightSize: 0.67,
   highlightDots: 1,
+  secondHighlight: 1,
+  secondAround: -60,
+  secondHeight: 30,
   outlineColor: palette.ink,
   thickness: 2,
   squiggle: 1.1,
@@ -40,14 +44,7 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   shared.uShift.value = s.rgbShift;
   shared.uGloss.value = THREE.MathUtils.lerp(150, 15, s.highlightSize);
   shared.uShine.value = s.highlightDots;
-
-  const around = THREE.MathUtils.degToRad(s.lightAround);
-  const height = THREE.MathUtils.degToRad(s.lightHeight);
-  shared.uLightDir.value.set(
-    Math.cos(height) * Math.cos(around),
-    Math.sin(height),
-    Math.cos(height) * Math.sin(around),
-  );
+  shared.uShine2.value = s.secondHighlight;
 
   outline.uniforms.uInk.value.set(s.outlineColor);
   outline.uniforms.uThickness.value = s.thickness;
@@ -56,6 +53,27 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
 
   scene.background.set(s.paper);
   controls.autoRotate = s.spin;
+}
+
+function setDirection(target, aroundDeg, heightDeg) {
+  const around = THREE.MathUtils.degToRad(aroundDeg);
+  const height = THREE.MathUtils.degToRad(heightDeg);
+  target.set(
+    Math.cos(height) * Math.cos(around),
+    Math.sin(height),
+    Math.cos(height) * Math.sin(around),
+  );
+}
+
+// Called every frame. With "follows the camera" on, the light's direction is
+// measured from wherever the camera is, so the shading turns with the view
+// instead of staying put on the toast.
+export function updateLights(s, shared, camera, target) {
+  const cameraAround = s.followCamera
+    ? THREE.MathUtils.radToDeg(Math.atan2(camera.position.z - target.z, camera.position.x - target.x))
+    : 55; // where the camera starts
+  setDirection(shared.uLightDir.value, cameraAround + s.lightAround, s.lightHeight);
+  setDirection(shared.uLightDir2.value, cameraAround + s.secondAround, s.secondHeight);
 }
 
 // Surface colors: the shade and dot tones are derived from the base color
@@ -87,12 +105,16 @@ export function createTweakPanel(settings, onChange) {
   shading.add(settings, 'rgbShift', 0, 6, 0.1).name('Color offset');
 
   const light = gui.addFolder('Light');
-  light.add(settings, 'lightAround', 0, 360, 1).name('Direction');
+  light.add(settings, 'lightAround', -180, 180, 1).name('Direction');
   light.add(settings, 'lightHeight', 5, 85, 1).name('Height');
+  light.add(settings, 'followCamera').name('Follows the camera');
 
   const highlight = gui.addFolder('Spread highlight');
   highlight.add(settings, 'highlightSize', 0, 1, 0.01).name('Size');
   highlight.add(settings, 'highlightDots', 0, 1, 0.01).name('Dots around it');
+  highlight.add(settings, 'secondHighlight', 0, 1, 0.01).name('Second highlight');
+  highlight.add(settings, 'secondAround', -180, 180, 1).name('Second direction');
+  highlight.add(settings, 'secondHeight', 5, 85, 1).name('Second height');
 
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');

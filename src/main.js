@@ -4,10 +4,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   palette,
   createSharedUniforms,
+  createDissolveUniforms,
   createToonMaterial,
+  createNormalMaterial,
   createOutlineMaterial,
 } from './toon.js';
-import { defaults, applySettings, applySurfaceColor, createTweakPanel } from './tweaks.js';
+import {
+  defaults,
+  applySettings,
+  applySurfaceColor,
+  updateLights,
+  createTweakPanel,
+} from './tweaks.js';
+import { createSpreadSwitch } from './spreadSwitch.js';
 
 // The shaders work in display colors directly (see palette in toon.js).
 THREE.ColorManagement.enabled = false;
@@ -39,15 +48,25 @@ controls.autoRotateSpeed = 0.8;
 
 const shared = createSharedUniforms();
 
+const dissolve = createDissolveUniforms();
+
 const materials = {
   'Purple Crumb': createToonMaterial(palette.crumb, shared),
   'Purple Crust': createToonMaterial(palette.crust, shared),
-  'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared),
+  'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared, dissolve),
 };
+const plainNormals = createNormalMaterial();
+const normalMaterials = { 'Purple Spread': createNormalMaterial(dissolve) };
 
+const meshes = [];
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
-    if (child.isMesh) child.material = materials[child.material.name] ?? materials['Purple Crumb'];
+    if (!child.isMesh) return;
+    const name = child.material.name;
+    child.userData.toonMaterial = materials[name] ?? materials['Purple Crumb'];
+    child.userData.normalMaterial = normalMaterials[name] ?? plainNormals;
+    child.material = child.userData.toonMaterial;
+    meshes.push(child);
   });
   scene.add(gltf.scene);
 });
@@ -58,7 +77,6 @@ const normalTarget = new THREE.WebGLRenderTarget(1, 1, {
   type: THREE.HalfFloatType,
   depthTexture: new THREE.DepthTexture(1, 1),
 });
-const normalMaterial = new THREE.MeshNormalMaterial();
 
 const outline = createOutlineMaterial();
 outline.uniforms.tColor.value = colorTarget.texture;
@@ -101,30 +119,45 @@ function applyAll() {
   applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
 }
-if (showPanel) createTweakPanel(settings, applyAll);
+const spreadSwitch = createSpreadSwitch({
+  dissolve,
+  getColor: () => settings.spread,
+  setColor: (color) => {
+    settings.spread = color;
+    applyAll();
+    panel?.controllersRecursive().forEach((c) => c.updateDisplay());
+  },
+});
+const panel = showPanel
+  ? createTweakPanel(settings, () => {
+      applyAll();
+      spreadSwitch.sync();
+    })
+  : null;
 
 window.addEventListener('resize', resize);
 resize();
 
 renderer.setAnimationLoop(() => {
   controls.update();
+  updateLights(settings, shared, camera, controls.target);
   outline.uniforms.uTime.value = still ? 0 : performance.now() / 1000;
 
   renderer.setRenderTarget(colorTarget);
   renderer.render(scene, camera);
 
-  scene.overrideMaterial = normalMaterial;
+  for (const mesh of meshes) mesh.material = mesh.userData.normalMaterial;
   const background = scene.background;
   scene.background = null;
   renderer.setClearColor(0x000000, 0);
   renderer.setRenderTarget(normalTarget);
   renderer.render(scene, camera);
   scene.background = background;
-  scene.overrideMaterial = null;
+  for (const mesh of meshes) mesh.material = mesh.userData.toonMaterial;
 
   renderer.setRenderTarget(null);
   renderer.render(quadScene, quadCamera);
 });
 
 // Handy from the browser console: change `toast.settings`, then call `toast.apply()`.
-window.toast = { settings, apply: applyAll, camera, controls };
+window.toast = { settings, apply: applyAll, camera, controls, dissolve, switchSpread: () => spreadSwitch.switchSpread() };
