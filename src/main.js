@@ -21,6 +21,7 @@ import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
 import { createNextButton } from './ui.js';
 import { createLoader } from './loader.js';
+import { gsap } from 'gsap';
 
 const loader = createLoader();
 
@@ -91,15 +92,37 @@ function addEdgeDistance(geometry) {
   geometry.setAttribute('edgeDist', new THREE.BufferAttribute(dist, 1));
 }
 
-// The toast hangs from two groups: `placement` takes the position sliders,
-// `follow` adds the small turn toward the cursor. The model is offset so both
-// turn it around its own middle.
+// The toast hangs from a chain of groups: `placement` takes the position
+// sliders, `spin` and `travel` play the entrance, `follow` adds the small turn
+// toward the cursor and `bob` the float. The model is offset so they all turn
+// it around its own middle.
+const travel = new THREE.Group(); // entrance: comes forward from the back
 const placement = new THREE.Group();
+const spin = new THREE.Group(); // entrance: stands up and turns
 const follow = new THREE.Group();
 const bob = new THREE.Group(); // the float
-placement.add(follow);
+travel.add(placement);
+placement.add(spin);
+spin.add(follow);
 follow.add(bob);
-scene.add(placement);
+scene.add(travel);
+
+// The entrance, played as the loading screen lifts: the toast starts further
+// back, standing upright, and comes forward while it turns twice around and
+// tips down onto its resting angle. `intro.t` runs 0..1.
+const intro = { t: 0 };
+function showIntro() {
+  const t = intro.t;
+  const away = new THREE.Vector3();
+  camera.getWorldDirection(away);
+  travel.position.copy(away).multiplyScalar(6 * (1 - t) ** 2);
+  spin.rotation.set(1.35 * (1 - Math.min(t * 1.15, 1)) ** 2, Math.PI * 4 * (1 - t), 0, 'YXZ');
+}
+showIntro();
+function playIntro() {
+  const quick = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  gsap.to(intro, { t: 1, duration: quick ? 0.5 : 2.2, ease: 'power2.out', onUpdate: showIntro });
+}
 let model = null;
 const letterRolls = []; // see shuffleLetters()
 const modelCenter = new THREE.Vector3();
@@ -125,7 +148,7 @@ new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   renderer.compile(scene, camera);
   document.fonts.ready.then(() => {
     let frames = 0;
-    const tick = () => (++frames < 3 ? requestAnimationFrame(tick) : loader.ready());
+    const tick = () => (++frames < 3 ? requestAnimationFrame(tick) : loader.ready(playIntro));
     requestAnimationFrame(tick);
   });
 }, (event) => event.total && loader.progress(event.loaded / event.total));
@@ -405,5 +428,5 @@ window.toast = {
   overlay,
   outline,
   shuffleLetters,
-  groups: { placement, follow, bob },
+  groups: { travel, placement, spin, follow, bob },
 };

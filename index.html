@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Spread The Love</title>
   <meta name="theme-color" content="#ffedcb" />
+  <link rel="preload" href="./assets/fonts/BDKarlo.woff2" as="font" type="font/woff2" crossorigin />
   <style>
     /* Everything is sized for a 1440px-wide screen and scales with the
        window width from there (16px text at 1440 = 1.111vw). The frame's
@@ -346,18 +347,6 @@
   </script>
 </head>
 <body>
-  <div class="loader" role="status" aria-label="Loading">
-    <svg class="loader__wave" aria-hidden="true"><path class="loader__curtain" /><path class="loader__edge" /></svg>
-    <div class="loader__content" aria-hidden="true">
-      <div class="loader__word">Loading...</div>
-      <div class="loader__bar"><div class="loader__fill"></div></div>
-    </div>
-  </div>
-  <h1 class="title" aria-label="Pick your spread">
-    <span class="title__small" aria-hidden="true"><span>P</span><span>i</span><span>c</span><span>k</span> <span>y</span><span>o</span><span>u</span><span>r</span></span>
-    <span class="title__big" aria-hidden="true"><span>S</span><span>p</span><span>r</span><span>e</span><span>a</span><span>d</span></span>
-  </h1>
-  <ul class="flavors" aria-label="Spread flavors"></ul>
   <!-- Gives the titles and buttons the same hand-drawn wobble as the toast.
        The title filters also draw one ink outline (a grown copy of all the
        letters together) and five stacked copies of it behind, which blend
@@ -412,6 +401,38 @@
       <feDisplacementMap in="SourceGraphic" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
     </filter>
   </svg>
+  <script>
+    // Size the title outline and shadow right away, so the loading screen's
+    // lettering has them from its first frame (src/tweaks.js keeps them in
+    // step with the settings and window size after that).
+    (function () {
+      var w = window.innerWidth;
+      var u = w <= 700 ? w / 760 : w / 1440;
+      var line = Math.max(Math.max(3.5 * w / 1440, 1.5) * 0.9, 2);
+      var sizes = { 'title-big-ink': [6, 8], 'title-small-ink': [3, 3.5] };
+      Object.keys(sizes).forEach(function (id) {
+        var filter = document.getElementById(id);
+        filter.querySelector('feMorphology').setAttribute('radius', line.toFixed(2));
+        filter.querySelectorAll('feOffset').forEach(function (offset) {
+          var step = Number(offset.dataset.step);
+          offset.setAttribute('dx', (sizes[id][0] * u * step).toFixed(2));
+          offset.setAttribute('dy', (sizes[id][1] * u * step).toFixed(2));
+        });
+      });
+    })();
+  </script>
+  <div class="loader" role="status" aria-label="Loading">
+    <svg class="loader__wave" aria-hidden="true"><path class="loader__curtain" /><path class="loader__edge" /></svg>
+    <div class="loader__content" aria-hidden="true">
+      <div class="loader__word">Loading...</div>
+      <div class="loader__bar"><div class="loader__fill"></div></div>
+    </div>
+  </div>
+  <h1 class="title" aria-label="Pick your spread">
+    <span class="title__small" aria-hidden="true"><span>P</span><span>i</span><span>c</span><span>k</span> <span>y</span><span>o</span><span>u</span><span>r</span></span>
+    <span class="title__big" aria-hidden="true"><span>S</span><span>p</span><span>r</span><span>e</span><span>a</span><span>d</span></span>
+  </h1>
+  <ul class="flavors" aria-label="Spread flavors"></ul>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

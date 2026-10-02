@@ -54,7 +54,8 @@ export function createLoader() {
     edge.setAttribute('d', `M${points.reverse().join(' L')}`);
   }
 
-  function ready() {
+  // `onReveal` runs as the curtain starts to lift.
+  function ready(onReveal) {
     if (finished) return;
     finished = true;
     screen.style.background = 'none'; // the SVG curtain takes over from here
@@ -72,7 +73,8 @@ export function createLoader() {
         onUpdate: () => (fill.style.transform = `scaleX(${shown.value})`),
       })
       .to(content, { autoAlpha: 0, scale: 0.85, y: -10, duration: 0.3, ease: 'back.in(2)' }, '+=0.15')
-      .to(wave, { lift: 1, duration: quick ? 0.4 : 1.3, ease: 'power3.inOut', onUpdate: drawWave }, '-=0.05');
+      .add(() => onReveal?.(), '-=0.05')
+      .to(wave, { lift: 1, duration: quick ? 0.4 : 1.3, ease: 'power3.inOut', onUpdate: drawWave }, '<');
   }
 
   window.addEventListener('resize', () => !finished || drawWave());
