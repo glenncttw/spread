@@ -20,6 +20,9 @@ import {
 import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
 import { createNextButton } from './ui.js';
+import { createLoader } from './loader.js';
+
+const loader = createLoader();
 
 // The shaders work in display colors directly (see palette in toon.js).
 THREE.ColorManagement.enabled = false;
@@ -117,7 +120,15 @@ new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   model.position.copy(modelCenter).negate();
   bob.add(model);
   placeToast();
-});
+  // Compile the shaders now, then lift the loading screen once a couple of
+  // frames have drawn and the title font is in, so nothing pops in late.
+  renderer.compile(scene, camera);
+  document.fonts.ready.then(() => {
+    let frames = 0;
+    const tick = () => (++frames < 3 ? requestAnimationFrame(tick) : loader.ready());
+    requestAnimationFrame(tick);
+  });
+}, (event) => event.total && loader.progress(event.loaded / event.total));
 
 function placeToast() {
   const deg = THREE.MathUtils.degToRad;

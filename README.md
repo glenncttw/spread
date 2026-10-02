@@ -16,4 +16,6 @@ The "Pick your spread" titles use BD Karlo (`assets/fonts`). Their positions, an
 
 Picking a dot swaps the spread with two solid outlined shapes at once: the old color shrinks away while the new one grows in over it, after an optional "In delay" (`src/spreadSwitch.js`, timed with a GSAP timeline). Hovering a dot bounces it and pops out its name in a speech bubble. The NEXT button in the bottom right corner is a pink circle drawn by the canvas under the frame, with the same bounce (`src/ui.js`); it doesn't go anywhere yet. The toast floats gently (tipping as it bobs) and turns toward the cursor a moment later with an eased, spring-like follow; the "Toast position" sliders place, turn and size it and set the float. When the cursor nears the edge, the cream border bulges toward it on a springy follow ("Magnetic border" in the Frame folder).
 
+A pink loading screen with a progress bar shows while the toast loads, then lifts off like a curtain with a wavy ink edge (`src/loader.js`). The background halftone drifts slowly up along its tilt ("Dot drift speed" under Background).
+
 "Layout overlay" in the panel lets you upload a mockup image and show it over the page (20% opacity by default) to check positions (`src/overlay.js`).

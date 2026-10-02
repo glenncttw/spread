@@ -258,6 +258,62 @@
       }
     }
 
+    /* Loading screen (src/loader.js): full-bleed pink with "Loading..." in the
+       title lettering and an ink-outlined progress bar, from the mockup. The
+       SVG holds the curtain that lifts off with a wavy edge when it's done. */
+    .loader {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: grid;
+      place-items: center;
+      background: #ff71c3;
+    }
+    .loader__wave { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+    .loader__curtain { fill: #ff71c3; }
+    .loader__edge { fill: none; stroke: var(--ink); stroke-width: calc(3.5 * var(--u)); stroke-linejoin: round; filter: url(#ink-wobble); }
+    .loader__content {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: calc(38 * var(--u));
+    }
+    .loader__word {
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: calc(38.5 * var(--u));
+      line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      color: var(--frame-color);
+      filter: url(#title-small-ink);
+    }
+    .loader__bar {
+      --d: var(--u);
+      position: relative;
+      width: max(calc(320 * var(--u)), 220px);
+      height: max(calc(17 * var(--u)), 12px);
+      box-sizing: border-box;
+      border: max(calc(2.5 * var(--u)), 2px) solid var(--ink);
+      border-radius: 999px;
+      background: var(--frame-color);
+      overflow: hidden;
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+    }
+    .loader__fill {
+      position: absolute;
+      inset: 0;
+      background: #ff9c41;
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+    }
+
     /* Mockup overlay for checking positions. */
     .layout-overlay {
       position: fixed;
@@ -290,6 +346,13 @@
   </script>
 </head>
 <body>
+  <div class="loader" role="status" aria-label="Loading">
+    <svg class="loader__wave" aria-hidden="true"><path class="loader__curtain" /><path class="loader__edge" /></svg>
+    <div class="loader__content" aria-hidden="true">
+      <div class="loader__word">Loading...</div>
+      <div class="loader__bar"><div class="loader__fill"></div></div>
+    </div>
+  </div>
   <h1 class="title" aria-label="Pick your spread">
     <span class="title__small" aria-hidden="true"><span>P</span><span>i</span><span>c</span><span>k</span> <span>y</span><span>o</span><span>u</span><span>r</span></span>
     <span class="title__big" aria-hidden="true"><span>S</span><span>p</span><span>r</span><span>e</span><span>a</span><span>d</span></span>

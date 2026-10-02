@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // turned off in main.js so these hex codes show up on screen exactly as written.
 export const palette = {
   paper: '#f4ecdc',
-  background: ['#ff71c3', '#ff9c41', '#9cdd33'], // top, middle, bottom
+  background: ['#6233dd', '#ff71c3', '#ff9c41'], // top, middle, bottom
   ink: '#211d1e',
   crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e' },
   crust: { base: '#c46a2c', shade: '#a9531f', dots: '#6e2c0e' },
@@ -548,7 +548,7 @@ export function createOutlineMaterial() {
       uBgFlow: { value: 0.35 }, // how much the noise bends the gradient
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
-      uBgDotDrift: { value: 0.3 }, // dot rows per second, along the screen's tilt
+      uBgDotDrift: { value: 0.8 }, // dot rows per second, along the screen's tilt
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },

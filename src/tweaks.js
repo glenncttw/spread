@@ -52,7 +52,7 @@ export const defaults = {
   bgSpeed: 1,
   bgDotSize: 6,
   bgDotAngle: -12,
-  bgDotDrift: 0.3,
+  bgDotDrift: 0.8,
   bgDots: 0.7,
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
@@ -278,7 +278,7 @@ export function createTweakPanel(settings, onChange, overlay) {
   bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
   bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');
   bg.add(settings, 'bgDots', 0, 1, 0.01).name('Dot strength');
-  bg.add(settings, 'bgDotDrift', 0, 2, 0.05).name('Dot drift');
+  bg.add(settings, 'bgDotDrift', 0, 4, 0.05).name('Dot drift speed');
 
   const frame = gui.addFolder('Frame (sizes at 1440px wide)');
   frame.add(settings, 'frameBorder', 0, 60, 1).name('Border (px)');
