@@ -1,8 +1,8 @@
 // The spread picker: five dots down the left. Picking one grows the new color
-// over the old one as a solid shape from the top right. Each switch rolls a
-// slightly different noise pattern, direction and speed so it never plays out
-// quite the same twice. Hovering a dot bounces it and pops
-// out its name.
+// over the old one as a solid shape from the top right, while main.js spins
+// the toast round. Each switch rolls a slightly different noise pattern,
+// direction and speed so it never plays out quite the same twice. Hovering a
+// dot bounces it and pops out its name.
 import { gsap } from 'gsap';
 import { bounce, popLabel } from './ui.js';
 
@@ -45,7 +45,7 @@ function roll(dissolve, variation) {
   dissolve.uDissolveNoise.value.set(vary(2.5, 1.2, variation), vary(0.35, 0.2, variation));
 }
 
-export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor, getTiming }) {
+export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor, getTiming, onSwitch }) {
   let busy = false;
   let queued = null;
 
@@ -108,11 +108,13 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     keepOldColor();
     setColor(flavors[i].color);
 
+    const duration = vary(seconds, seconds * 0.2, variation) * (reduceMotion ? 0.4 : 1);
+    onSwitch?.(duration);
     const progress = { value: 0 };
     dissolve.uSwitch.value.set(0, 1);
     gsap.to(progress, {
       value: 1,
-      duration: vary(seconds, seconds * 0.2, variation) * (reduceMotion ? 0.4 : 1),
+      duration,
       ease: easings[easing] ?? 'power2.out',
       onUpdate: () => dissolve.uSwitch.value.set(progress.value, 1),
       onComplete() {

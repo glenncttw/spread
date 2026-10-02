@@ -124,6 +124,25 @@ function showIntro() {
   streaks.update(t, turn);
 }
 showIntro();
+// On every color switch the toast spins twice around in place, with the
+// same streaks, settling as the new color fills in.
+const whirl = { t: 1 };
+function spinToast(seconds) {
+  if (intro.t < 1) return; // the entrance is still playing
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  whirl.t = 0;
+  gsap.to(whirl, {
+    t: 1,
+    duration: Math.max(seconds, 1.2),
+    ease: 'power2.out',
+    overwrite: true,
+    onUpdate() {
+      const turn = Math.PI * 4 * (1 - whirl.t);
+      spin.rotation.y = turn;
+      streaks.update(whirl.t, turn);
+    },
+  });
+}
 function playIntro() {
   const quick = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   gsap.to(intro, { t: 1, duration: quick ? 0.5 : 2.4, ease: 'power2.out', onUpdate: showIntro });
@@ -325,6 +344,7 @@ function applyAll() {
 const spreadSwitch = createSpreadSwitch({
   dissolve,
   getColor: () => settings.spread,
+  onSwitch: spinToast,
   getTiming: () => ({
     seconds: settings.switchIn,
     variation: settings.switchVariation,
