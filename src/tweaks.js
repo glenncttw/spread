@@ -61,6 +61,9 @@ export const defaults = {
   magnetReach: 160,
   floatAmount: 0.5,
   floatSpeed: 1,
+  floatTilt: 1,
+  followDelay: 0.12,
+  letterLean: 5,
   // Where the toast sits. Positions are in scene units, angles in degrees.
   toastX: 0,
   toastY: -0.3,
@@ -71,7 +74,7 @@ export const defaults = {
   toastSize: 1,
   followCursor: true,
   followAmount: 14,
-  followSmooth: 0.5,
+  followSmooth: 0.45,
   orbit: false,
   spin: false,
 };
@@ -119,6 +122,7 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   root.setProperty('--frame-border', `${f.border}px`);
   root.setProperty('--frame-radius', `${f.radius}px`);
   root.setProperty('--ink-line', `${f.line}px`);
+  updateTitleInk(s, f);
   root.setProperty('--frame-color', s.frameColor);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', s.frameColor);
   controls.autoRotate = s.spin;
@@ -135,6 +139,22 @@ export function frameSize(s, width = window.innerWidth) {
     line: Math.max(s.frameLine * scale, 1.5),
     scale: Math.max(scale, 0.5),
   };
+}
+
+// The title outline and shadow are SVG filters, which can't read CSS sizes,
+// so their sizes are set here whenever the window or the settings change.
+function updateTitleInk(s, f) {
+  const width = window.innerWidth;
+  const u = width <= 700 ? width / 760 : width / 1440; // same as --u in index.html
+  const sizes = { 'title-big-ink': [6, 8], 'title-small-ink': [3, 3.5] };
+  for (const [id, [dx, dy]] of Object.entries(sizes)) {
+    const filter = document.getElementById(id);
+    if (!filter) continue;
+    filter.querySelector('feMorphology').setAttribute('radius', (f.line * 1.5).toFixed(2));
+    filter.querySelector('feFlood').setAttribute('flood-color', s.frameInk);
+    filter.querySelector('feOffset').setAttribute('dx', (dx * u).toFixed(2));
+    filter.querySelector('feOffset').setAttribute('dy', (dy * u).toFixed(2));
+  }
 }
 
 function setDirection(target, aroundDeg, heightDeg) {
@@ -189,6 +209,8 @@ export function createTweakPanel(settings, onChange, overlay) {
   place.add(settings, 'followSmooth', 0, 0.95, 0.01).name('Follow smoothness');
   place.add(settings, 'floatAmount', 0, 2, 0.01).name('Float amount');
   place.add(settings, 'floatSpeed', 0, 3, 0.01).name('Float speed');
+  place.add(settings, 'floatTilt', 0, 3, 0.01).name('Float tilt');
+  place.add(settings, 'followDelay', 0, 0.6, 0.01).name('Follow delay (s)');
   place.add(settings, 'orbit').name('Drag to orbit camera');
   place.add(settings, 'spin').name('Spin');
 
@@ -253,6 +275,10 @@ export function createTweakPanel(settings, onChange, overlay) {
   frame.add(settings, 'magnetPull', 0, 80, 1).name('Magnet bulge (px)');
   frame.add(settings, 'magnetSize', 20, 250, 1).name('Magnet width (px)');
   frame.add(settings, 'magnetReach', 20, 400, 1).name('Magnet reach (px)');
+
+  const title = gui.addFolder('Title');
+  title.add(settings, 'letterLean', 0, 15, 0.5).name('Letter lean (°)');
+  title.add({ shuffle: () => window.toast?.shuffleLetters() }, 'shuffle').name('Shuffle letter lean');
 
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');

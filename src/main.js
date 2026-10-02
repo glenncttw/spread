@@ -89,9 +89,12 @@ function addEdgeDistance(geometry) {
 // turn it around its own middle.
 const placement = new THREE.Group();
 const follow = new THREE.Group();
+const bob = new THREE.Group(); // the float
 placement.add(follow);
+follow.add(bob);
 scene.add(placement);
 let model = null;
+const letterRolls = []; // see shuffleLetters()
 const modelCenter = new THREE.Vector3();
 
 const meshes = [];
@@ -108,7 +111,7 @@ new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   model = gltf.scene;
   new THREE.Box3().setFromObject(model).getCenter(modelCenter);
   model.position.copy(modelCenter).negate();
-  follow.add(model);
+  bob.add(model);
   placeToast();
 });
 
@@ -138,23 +141,47 @@ document.documentElement.addEventListener('pointerleave', () => {
   pointerPx.inside = false;
 });
 
-function followCursor(dt) {
+// The cursor's recent path, so the toast can follow it a moment later.
+const pointerHistory = [];
+const followVelocity = { turn: 0, tilt: 0 };
+
+// Spring-like smoothing (as in Unity's SmoothDamp): eases in and out and never
+// overshoots. `time` is roughly how long it takes to catch up.
+function smoothDamp(current, target, key, time, dt) {
+  const omega = 2 / Math.max(time, 0.0001);
+  const x = omega * dt;
+  const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  const change = current - target;
+  const temp = (followVelocity[key] + omega * change) * dt;
+  followVelocity[key] = (followVelocity[key] - omega * temp) * decay;
+  return target + (change + temp) * decay;
+}
+
+function followCursor(dt, now) {
   const on = settings.followCursor && !still;
+  // Look up where the cursor was `followDelay` seconds ago.
+  pointerHistory.push({ t: now, x: pointer.x, y: pointer.y });
+  while (pointerHistory.length > 2 && pointerHistory[1].t <= now - settings.followDelay * 1000) pointerHistory.shift();
+  const past = pointerHistory[0];
   const amount = THREE.MathUtils.degToRad(settings.followAmount);
-  const targetTurn = on ? pointer.x * amount : 0;
-  const targetTilt = on ? -pointer.y * amount * 0.6 : 0;
-  // Frame-rate independent easing; "smoothness" 0 snaps, 0.95 drifts slowly.
-  const ease = 1 - Math.pow(1 - THREE.MathUtils.lerp(1, 0.02, settings.followSmooth), dt * 60);
-  follow.rotation.y += (targetTurn - follow.rotation.y) * ease;
-  follow.rotation.x += (targetTilt - follow.rotation.x) * ease;
+  const targetTurn = on ? past.x * amount : 0;
+  const targetTilt = on ? -past.y * amount * 0.6 : 0;
+  // "Smoothness" 0 is snappy, 0.95 drifts slowly (about 1.5 seconds to catch up).
+  const time = THREE.MathUtils.lerp(0.04, 1.5, settings.followSmooth);
+  follow.rotation.y = smoothDamp(follow.rotation.y, targetTurn, 'turn', time, dt);
+  follow.rotation.x = smoothDamp(follow.rotation.x, targetTilt, 'tilt', time, dt);
 }
 
 // A slow, gentle bob and sway so the toast feels like it's hovering.
 function floatToast(time) {
   const a = still ? 0 : settings.floatAmount;
   const t = time * settings.floatSpeed;
-  follow.position.y = Math.sin(t * 1.1) * 0.05 * a;
-  follow.rotation.z = (Math.sin(t * 0.7 + 1.3) * 1.6 * a * Math.PI) / 180;
+  const deg = Math.PI / 180;
+  bob.position.y = Math.sin(t * 1.1) * 0.05 * a;
+  // Tip forward on the way up and back on the way down (follows the bob's
+  // speed, so it leans into the movement), plus a slow side-to-side sway.
+  bob.rotation.x = Math.cos(t * 1.1) * 2.2 * settings.floatTilt * a * deg;
+  bob.rotation.z = Math.sin(t * 0.7 + 1.3) * 1.6 * a * deg + Math.cos(t * 1.1 + 0.6) * 0.8 * settings.floatTilt * a * deg;
   placement.position.x = modelCenter.x + settings.toastX + Math.sin(t * 0.5 + 0.4) * 0.02 * a;
 }
 
@@ -244,6 +271,7 @@ function applyAll() {
   applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
   placeToast();
+  if (letterRolls.length) leanLetters();
 }
 const spreadSwitch = createSpreadSwitch({
   dissolve,
@@ -271,8 +299,25 @@ const panel = showPanel
 window.addEventListener('resize', resize);
 resize();
 
+// Each letter of the big title leans a little, alternating sides with a
+// random amount so it looks hand-placed. "Shuffle" in the panel re-rolls it.
+function shuffleLetters() {
+  letterRolls.length = 0;
+  document.querySelectorAll('.title__big > span').forEach((letter, i) => {
+    const side = (i % 2 ? 1 : -1) * (Math.random() < 0.2 ? -1 : 1);
+    letterRolls.push(side * (0.35 + Math.random() * 0.65));
+  });
+  leanLetters();
+}
+function leanLetters() {
+  document.querySelectorAll('.title__big > span').forEach((letter, i) => {
+    letter.style.setProperty('--lean', (letterRolls[i] * settings.letterLean).toFixed(2));
+  });
+}
+shuffleLetters();
+
 // Re-roll the wobble on the HTML titles and buttons in step with the line boil.
-const wobble = document.querySelector('#ink-wobble feTurbulence');
+const wobbles = document.querySelectorAll('feTurbulence');
 let wobbleFrame = -1;
 
 let lastFrame = performance.now();
@@ -280,7 +325,7 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
   controls.update();
-  followCursor(dt);
+  followCursor(dt, now);
   floatToast(now / 1000);
   updateMagnet(dt);
   scene.updateMatrixWorld();
@@ -291,9 +336,9 @@ renderer.setAnimationLoop((now) => {
   dissolve.uDissolveTime.value = time;
   outline.uniforms.uBgTime.value = time * settings.bgSpeed;
   const boilFrame = Math.floor(time * settings.boil);
-  if (wobble && boilFrame !== wobbleFrame) {
+  if (boilFrame !== wobbleFrame) {
     wobbleFrame = boilFrame;
-    wobble.setAttribute('seed', String(1 + (boilFrame % 7)));
+    wobbles.forEach((w) => w.setAttribute('seed', String(1 + (boilFrame % 7))));
   }
 
   renderer.setRenderTarget(colorTarget);
@@ -321,5 +366,7 @@ window.toast = {
   dissolve,
   overlay,
   outline,
+  shuffleLetters,
+  groups: { placement, follow, bob },
   switchSpread: () => spreadSwitch.switchSpread(),
 };
