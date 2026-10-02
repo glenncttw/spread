@@ -128,6 +128,12 @@ const dissolveGLSL = /* glsl */ `
   }
 
   // How far inside the remaining shape this point is (negative = cut away).
+  // 1 while the switch shape is in charge, 0 at rest.
+  float dissolveBlend() {
+    return uDissolve.y < 0.5
+      ? smoothstep(0.0, 0.2, uDissolve.x)
+      : 1.0 - smoothstep(0.8, 1.0, uDissolve.x);
+  }
   float dissolveMargin() {
     if (uDissolve.y < 0.5 && uDissolve.x <= 0.0) return 1.0;
     // Work top-down on the toast (world x/z) so the cut behaves like a cookie
@@ -142,7 +148,10 @@ const dissolveGLSL = /* glsl */ `
     vec2 q = rel * uDissolveNoise.x + uDissolveSeed + uDissolveTime * 0.6;
     d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
 
-    float maxR = 1.3 + uDissolveNoise.y * 0.5;
+    // Growing in, the blob gets big enough to cover the whole spread, so it
+    // has filled out before the hand-off to the resting shape. Shrinking
+    // out it starts smaller, so the movement begins right away.
+    float maxR = (uDissolve.y < 0.5 ? 1.3 : 1.75) + uDissolveNoise.y * 0.5;
     float r = uDissolve.y < 0.5 ? mix(maxR, 0.0, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
     // Blend the shrinking blob with the spread's own rim using a smooth
     // minimum, so where the two meet the shape rounds off instead of
@@ -150,7 +159,11 @@ const dissolveGLSL = /* glsl */ `
     float blob = (r - d) * uRadius;
     float k = 0.4;
     float h = clamp(0.5 + 0.5 * (vEdge - blob) / k, 0.0, 1.0);
-    return mix(vEdge, blob, h) - k * h * (1.0 - h);
+    float shape = mix(vEdge, blob, h) - k * h * (1.0 - h);
+    // Near the full-size end (the start of "out", the end of "in") ease the
+    // shape into the spread's own outline, so nothing snaps when the
+    // animation hands back to the resting spread.
+    return mix(vEdge, shape, dissolveBlend());
   }
 `;
 
@@ -275,6 +288,8 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
           if (margin < 0.0) discard;
           // Ink along the cut edge, a few pixels wide whatever the zoom.
           float cutLine = 1.0 - smoothstep(uCutWidth - 1.0, uCutWidth, margin / max(fwidth(margin), 1e-5));
+          // The cut line fades out as the shape settles back onto the rim.
+          cutLine *= dissolveBlend();
         #endif
 
         vec3 N = normalize(vNormal);
