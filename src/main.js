@@ -127,4 +127,4 @@ renderer.setAnimationLoop(() => {
 });
 
 // Handy from the browser console: change `toast.settings`, then call `toast.apply()`.
-window.toast = { settings, apply: applyAll };
+window.toast = { settings, apply: applyAll, camera, controls };

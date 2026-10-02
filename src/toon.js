@@ -157,7 +157,10 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared) 
         color = shadeWithHalftone(color, dark);
 
         // Glossy highlight: a small solid core with a ring of light dots around it.
-        float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss);
+        // Only on the rounded edges of the spread: the flat top (normal pointing
+        // straight up) never shines, so it can't turn white when seen from above.
+        float edge = 1.0 - smoothstep(0.88, 0.96, N.y);
+        float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss) * edge;
         vec3 shine = vec3(1.0, 0.97, 0.99);
         float glow = smoothstep(0.03, 0.55, spec) * 0.8 * uShine;
         color = mix(color, shine, halftone(gl_FragCoord.xy + 0.5 * uDotSize, uAngle, glow) * uSpecular);
