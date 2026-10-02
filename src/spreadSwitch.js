@@ -13,16 +13,26 @@ export const flavors = [
   { name: 'Blueberry', color: '#8793ff', x: 219.5, y: 519 },
 ];
 
-const easings = {
-  inOutCubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
-  inOutQuint: (t) => (t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2),
-  inOutSine: (t) => -(Math.cos(Math.PI * t) - 1) / 2,
-  outCubic: (t) => 1 - (1 - t) ** 3,
-  outBack: (t) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2,
-  outQuart: (t) => 1 - (1 - t) ** 4,
+// Easing curves to pick from in the panel ("Spread switch").
+export const easings = {
+  Linear: (t) => t,
+  'In sine': (t) => 1 - Math.cos((t * Math.PI) / 2),
+  'In cubic': (t) => t * t * t,
+  'In back': (t) => 2.70158 * t * t * t - 1.70158 * t * t,
+  'Out sine': (t) => Math.sin((t * Math.PI) / 2),
+  'Out cubic': (t) => 1 - (1 - t) ** 3,
+  'Out quart': (t) => 1 - (1 - t) ** 4,
+  'Out back': (t) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2,
+  'Out elastic': (t) => (t === 0 || t === 1 ? t : 2 ** (-10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1),
+  'In-out sine': (t) => -(Math.cos(Math.PI * t) - 1) / 2,
+  'In-out cubic': (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
+  'In-out quint': (t) => (t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2),
+  'In-out expo': (t) => (t === 0 || t === 1 ? t : t < 0.5 ? 2 ** (20 * t - 10) / 2 : (2 - 2 ** (-20 * t + 10)) / 2),
 };
-const outEasings = ['inOutCubic', 'inOutQuint', 'inOutSine'];
-const inEasings = ['outCubic', 'outBack', 'outQuart'];
+// "Random" picks one of these each time.
+const outEasings = ['In-out cubic', 'In-out quint', 'In-out sine'];
+const inEasings = ['Out cubic', 'Out back', 'Out quart'];
+export const easingChoices = ['Random', ...Object.keys(easings)];
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const between = (a, b) => a + Math.random() * (b - a);
@@ -90,14 +100,14 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) 
     busy = true;
     buttons.forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
 
-    const { outSeconds, gapSeconds, inSeconds, variation } = getTiming();
+    const { outSeconds, gapSeconds, inSeconds, variation, outEasing, inEasing } = getTiming();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const speed = reduceMotion ? 0.4 : 1;
     const p = dissolve.uDissolve.value;
 
     roll(dissolve, variation);
     p.set(0, 0);
-    const outEase = variation > 0 ? pick(outEasings) : 'inOutCubic';
+    const outEase = outEasing === 'Random' ? pick(outEasings) : outEasing;
     await tween(vary(outSeconds, outSeconds * 0.2, variation) * 1000 * speed, easings[outEase], (t) => p.set(t, 0));
 
     setColor(flavors[i].color);
@@ -105,7 +115,7 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) 
 
     roll(dissolve, variation);
     p.set(0, 1);
-    const inEase = variation > 0 ? pick(inEasings) : 'outCubic';
+    const inEase = inEasing === 'Random' ? pick(inEasings) : inEasing;
     await tween(vary(inSeconds, inSeconds * 0.2, variation) * 1000 * speed, easings[inEase], (t) => p.set(t, 1));
     p.set(0, 0);
 

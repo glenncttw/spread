@@ -6,7 +6,7 @@ export const palette = {
   paper: '#f4ecdc',
   background: ['#ff71c3', '#ff9c41', '#9cdd33'], // top, middle, bottom
   ink: '#211d1e',
-  crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e', hole: '#ecc98f', holeShadow: '#d6a663' },
+  crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e' },
   crust: { base: '#c46a2c', shade: '#a9531f', dots: '#6e2c0e' },
   spread: { base: '#a75bd1', shade: '#8c45b8', dots: '#55247a' },
 };
@@ -19,6 +19,12 @@ export const COLOR_MODES = { Tinted: 0, 'Single color': 1, 'CMY print': 2, RGB: 
 // World space to "toast space" (where the toast sits before it's moved),
 // shared by every material. main.js updates it whenever the toast moves.
 const toastSpace = { value: new THREE.Matrix4() };
+
+// Shared by the crumb's color and normal materials, so the holes line up.
+const holeUniforms = {
+  uHoleAmount: { value: 0.25 }, // how many holes open up (0..1)
+  uHoleSize: { value: 1 },
+};
 
 export function createSharedUniforms() {
   return {
@@ -159,7 +165,10 @@ const dissolveGLSL = /* glsl */ `
     // has filled out before the hand-off to the resting shape. Shrinking
     // out it starts smaller, so the movement begins right away.
     float maxR = (uDissolve.y < 0.5 ? 1.3 : 1.75) + uDissolveNoise.y * 0.5;
-    float r = uDissolve.y < 0.5 ? mix(maxR, 0.0, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
+    // Shrinking out ends a little below zero so the bumpiest edges are gone
+    // too by the last frame, instead of a last speck popping away.
+    float rEnd = -0.05 - uDissolveNoise.y * 0.5;
+    float r = uDissolve.y < 0.5 ? mix(maxR, rEnd, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
     // Blend the shrinking blob with the spread's own rim using a smooth
     // minimum, so where the two meet the shape rounds off instead of
     // forming a sharp corner.
@@ -174,6 +183,59 @@ const dissolveGLSL = /* glsl */ `
   }
 `;
 
+// Bread holes, grown from noise and drawn in ink by the outline pass: the
+// normal pass tips the surface normal inside each hole, so the same edge
+// finder that outlines the toast draws a wobbly, boiling line around every
+// hole. The color pass only adds a few halftone dots inside, like a shaded dip.
+const holesGLSL = /* glsl */ `
+  uniform float uHoleAmount;
+  uniform float uHoleSize;
+
+  float holeHash(vec3 p) {
+    return fract(sin(dot(p, vec3(17.1, 113.5, 61.7))) * 43758.5453);
+  }
+  float holeNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(holeHash(i), holeHash(i + vec3(1, 0, 0)), f.x),
+          mix(holeHash(i + vec3(0, 1, 0)), holeHash(i + vec3(1, 1, 0)), f.x), f.y),
+      mix(mix(holeHash(i + vec3(0, 0, 1)), holeHash(i + vec3(1, 0, 1)), f.x),
+          mix(holeHash(i + vec3(0, 1, 1)), holeHash(i + vec3(1, 1, 1)), f.x), f.y),
+      f.z);
+  }
+  vec2 holeHash2(vec2 c) {
+    return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
+  }
+
+  // Cellular (Worley) noise gives each hole its own spot; a smooth-noise warp
+  // bends the cells so every hole has its own lumpy shape, and only some
+  // cells open up (more in some patches than others). Returns the signed
+  // distance to the nearest hole's edge (negative inside), in cell units.
+  float holeDistance(vec2 p) {
+    vec2 q = p * 4.2 / uHoleSize;
+    q += (vec2(holeNoise(vec3(p * 2.0, 1.7)), holeNoise(vec3(p * 2.0, 8.3))) - 0.5) * 1.1;
+    q *= vec2(1.0, 1.4); // a little stretched, like risen dough
+    vec2 cell = floor(q);
+    vec2 f = fract(q);
+    float best = 8.0;
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(x, y);
+        vec2 h = holeHash2(cell + o);
+        float pick = fract(h.x * 13.7 + h.y * 7.1);
+        float cluster = holeNoise(vec3((cell + o) * 0.45, 4.2));
+        if (pick * 0.55 + cluster * 0.6 < 1.0 - uHoleAmount) continue;
+        float r = mix(0.1, 0.24, fract(pick * 5.3));
+        best = min(best, length(o + 0.25 + 0.5 * h - f) - r);
+      }
+    }
+    // Lumpy edges.
+    return best + (holeNoise(vec3(q * 2.6, 3.1)) - 0.5) * 0.06;
+  }
+`;
+
 // Cel shading: a hard light/shade split, halftone shading creeping in as the
 // surface turns away from the light, and an optional glossy highlight.
 export function createToonMaterial({ base, shade, dots, specular = 0, holes = false }, shared, dissolve) {
@@ -185,10 +247,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
     uniforms: {
       ...shared,
       ...dissolve,
-      uHoleColor: { value: new THREE.Color(palette.crumb.hole) },
-      uHoleShadow: { value: new THREE.Color(palette.crumb.holeShadow) },
-      uHoleAmount: { value: 0.3 }, // how many pores open up (0..1)
-      uHoleSize: { value: 1 },
+      ...holeUniforms,
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
       uDots: { value: new THREE.Color(dots) },
@@ -262,54 +321,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
       #endif
 
       #ifdef HOLES
-        uniform vec3 uHoleColor;
-        uniform vec3 uHoleShadow;
-        uniform float uHoleAmount;
-        uniform float uHoleSize;
-
-        vec2 holeHash2(vec2 c) {
-          return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
-        }
-
-        // Generative crumb: cellular (Worley) noise gives every pore its own
-        // spot, a warp from smooth noise bends the cells so no two holes are
-        // the same shape, low-frequency noise clusters them, and a finer noise
-        // roughens their edges. Returns 0..1 for "inside a hole".
-        float poreMask(vec2 p) {
-          vec2 q = p * 7.0 / uHoleSize;
-          q += (vec2(noise3(vec3(p * 2.2, 1.7)), noise3(vec3(p * 2.2, 8.3))) - 0.5) * 1.6;
-          q *= vec2(1.0, 1.35); // slightly stretched, like risen dough
-          vec2 cell = floor(q);
-          vec2 f = fract(q);
-          float d = 8.0;
-          float pick = 0.0;
-          for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-              vec2 o = vec2(x, y);
-              vec2 h = holeHash2(cell + o);
-              float dist = length(o + h - f);
-              if (dist < d) {
-                d = dist;
-                pick = fract(h.x * 13.7 + h.y * 7.1);
-              }
-            }
-          }
-          // Rough, slightly lumpy edges.
-          d += (noise3(vec3(q * 2.3, 3.1)) - 0.5) * 0.14;
-          // Only some cells open into a hole, more of them in denser patches.
-          float cluster = noise3(vec3(p * 1.4, 4.2));
-          float open = step(1.0 - uHoleAmount, pick * 0.6 + cluster * 0.55);
-          float r = mix(0.12, 0.34, pick * pick) * open;
-          float aa = fwidth(d) * 0.8;
-          return 1.0 - smoothstep(r - aa, r + aa, d);
-        }
-        // x = inside a hole, y = its shaded lip (the part of the hole not
-        // covered by a copy nudged toward the light, like a little dip).
-        vec2 breadHoles(vec2 p) {
-          float hole = poreMask(p);
-          float inner = poreMask(p + vec2(0.012, -0.016) * uHoleSize);
-          return vec2(hole, hole * (1.0 - inner));
-        }
+        ${holesGLSL}
       #endif
 
       // Glossy highlight: a small solid core with a ring of light dots around it.
@@ -373,14 +385,17 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
 
         float lit = smoothstep(-0.02, 0.02, ndl);
         vec3 color = mix(uShade, uBase, lit);
+        float holeDark = 0.0;
         #ifdef HOLES
-          // Only on the flat top of the bread, not down the sides.
-          vec2 hole = breadHoles(vWorldPos.xz) * smoothstep(0.6, 0.8, N.y);
-          color = mix(color, uHoleColor * mix(0.92, 1.0, lit), hole.x);
-          color = mix(color, uHoleShadow * mix(0.92, 1.0, lit), hole.y);
+          // Halftone dots inside each hole, heavier along its upper lip.
+          if (N.y > 0.7) {
+            float inHole = step(holeDistance(vWorldPos.xz), 0.0);
+            float lip = inHole * step(0.0, holeDistance(vWorldPos.xz + vec2(0.025, -0.035) * uHoleSize));
+            holeDark = inHole * 0.2 + lip * 0.35;
+          }
         #endif
 
-        float dark = (1.0 - smoothstep(-0.6, uReach, ndl)) * uAmount;
+        float dark = max((1.0 - smoothstep(-0.6, uReach, ndl)) * uAmount, holeDark);
         color = shadeWithHalftone(color, dark);
 
         color = addShine(color, N, V, L, 1.0, vec2(0.5 * uDotSize));
@@ -398,21 +413,28 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
 // Normals for the outline pass (same packing as THREE.MeshNormalMaterial).
 // The spread's version hides whatever the dissolve has eaten, so its outline
 // follows the solid part of the spread.
-export function createNormalMaterial(dissolve) {
+export function createNormalMaterial(dissolve, { holes = false, shared = null } = {}) {
+  const defines = {};
+  if (dissolve) defines.DISSOLVE = '';
+  if (holes) defines.HOLES = '';
   return new THREE.ShaderMaterial({
-    defines: dissolve ? { DISSOLVE: '' } : {},
-    uniforms: { ...dissolve },
+    defines,
+    uniforms: { ...dissolve, ...(holes ? { ...holeUniforms, uToastInv: shared.uToastInv } : {}) },
     vertexShader: /* glsl */ `
       varying vec3 vViewNormal;
       varying vec3 vWorldPos;
-      #ifdef DISSOLVE
+      varying float vUp;
+      #if defined(DISSOLVE) || defined(HOLES)
         uniform mat4 uToastInv;
+      #endif
+      #ifdef DISSOLVE
         attribute float edgeDist;
         varying float vEdge;
       #endif
       void main() {
         vViewNormal = normalize(normalMatrix * normal);
-        #ifdef DISSOLVE
+        vUp = normalize(mat3(modelMatrix) * normal).y;
+        #if defined(DISSOLVE) || defined(HOLES)
           vWorldPos = (uToastInv * modelMatrix * vec4(position, 1.0)).xyz;
         #endif
         vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
@@ -425,14 +447,24 @@ export function createNormalMaterial(dissolve) {
     fragmentShader: /* glsl */ `
       varying vec3 vViewNormal;
       varying vec3 vWorldPos;
+      varying float vUp;
       #ifdef DISSOLVE
         ${dissolveGLSL}
+      #endif
+      #ifdef HOLES
+        ${holesGLSL}
       #endif
       void main() {
         #ifdef DISSOLVE
           if (dissolveMargin() < 0.0) discard;
         #endif
-        gl_FragColor = vec4(normalize(vViewNormal) * 0.5 + 0.5, 1.0);
+        vec3 n = normalize(vViewNormal);
+        #ifdef HOLES
+          // Inside a hole the surface "dips": tipping the normal hard makes
+          // the outline pass see a fold all around the hole and ink it.
+          if (vUp > 0.7 && holeDistance(vWorldPos.xz) < 0.0) n = normalize(n + vec3(0.9, -0.9, 0.0));
+        #endif
+        gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
       }
     `,
   });

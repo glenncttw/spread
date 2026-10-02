@@ -57,7 +57,10 @@ const materials = {
   'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared, dissolve),
 };
 const plainNormals = createNormalMaterial();
-const normalMaterials = { 'Purple Spread': createNormalMaterial(dissolve) };
+const normalMaterials = {
+  'Purple Spread': createNormalMaterial(dissolve),
+  'Purple Crumb': createNormalMaterial(null, { holes: true, shared }),
+};
 
 // For each vertex of the spread: how far it is (across the toast) from the
 // spread's rim, where the surface turns down. The color switch blends its
@@ -283,6 +286,8 @@ const spreadSwitch = createSpreadSwitch({
     gapSeconds: settings.switchGap,
     inSeconds: settings.switchIn,
     variation: settings.switchVariation,
+    outEasing: settings.switchOutEasing,
+    inEasing: settings.switchInEasing,
   }),
   setColor: (color) => {
     settings.spread = color;

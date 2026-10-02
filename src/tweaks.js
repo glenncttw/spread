@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import GUI from '../vendor/lil-gui/lil-gui.esm.min.js';
 import { palette, PATTERNS, COLOR_MODES } from './toon.js';
+import { easingChoices } from './spreadSwitch.js';
 
 // Slider-friendly settings (pixels, degrees, 0..1). `applySettings` turns them
 // into shader uniforms. "Copy settings" puts the current values on the
@@ -25,7 +26,9 @@ export const defaults = {
   shadowWobble: 0.7,
   shadowWobbleSize: 2.5,
   switchOut: 1.8,
-  switchGap: 0.2,
+  switchGap: 0,
+  switchOutEasing: 'Random',
+  switchInEasing: 'Random',
   switchIn: 1.8,
   switchVariation: 0.5,
   outlineColor: palette.ink,
@@ -37,7 +40,7 @@ export const defaults = {
   crust: palette.crust.base,
   crumb: palette.crumb.base,
   spread: palette.spread.base,
-  holeAmount: 0.3,
+  holeAmount: 0.25,
   holeSize: 1,
   bgTop: palette.background[0],
   bgMiddle: palette.background[1],
@@ -253,9 +256,11 @@ export function createTweakPanel(settings, onChange, overlay) {
 
   const switching = gui.addFolder('Spread switch');
   switching.add(settings, 'switchOut', 0.3, 5, 0.05).name('Out duration (s)');
-  switching.add(settings, 'switchGap', 0, 2, 0.05).name('Pause before in (s)');
+  switching.add(settings, 'switchOutEasing', easingChoices).name('Out easing');
+  switching.add(settings, 'switchGap', 0, 2, 0.01).name('Delay before in (s)');
   switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('In duration (s)');
-  switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation');
+  switching.add(settings, 'switchInEasing', easingChoices).name('In easing');
+  switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation (shape & speed)');
 
   const bg = gui.addFolder('Background');
   bg.addColor(settings, 'bgTop').name('Top');
