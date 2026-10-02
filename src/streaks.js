@@ -1,4 +1,5 @@
-// Speed streaks for the toast's entrance: a few cream ribbons that whip
+// Speed streaks for the toast's entrance (and, fewer of them, its color
+// switch tumble): a few cream ribbons that whip
 // around the toast while it spins in, each one shooting out, stretching into
 // a pointed swoosh and pulling away again. They're curved bands on invisible
 // cylinders around the toast; a shader trims each band to its moving piece
@@ -31,7 +32,8 @@ const trimGLSL = /* glsl */ `
   }
 `;
 
-export function createStreaks(color) {
+// `count` keeps only the first few streaks.
+export function createStreaks(color, { count = 5 } = {}) {
   const group = new THREE.Group();
   const streaks = [];
   // Radius, height, how far around it reaches (radians), tilt, when it starts
@@ -43,7 +45,7 @@ export function createStreaks(color) {
     [2.1, 0.05, 3.8, -0.05, 0.13, 0.06],
     [1.7, -0.5, 2.6, 0.18, 0.18, 0.04],
   ];
-  for (const [radius, y, reach, tilt, start, thick] of layout) {
+  for (const [radius, y, reach, tilt, start, thick] of layout.slice(0, count)) {
     const geometry = new THREE.CylinderGeometry(radius, radius, thick * 3.2, 96, 1, true, Math.random() * Math.PI * 2, reach);
     const uniforms = { uHead: { value: 0 }, uTail: { value: 0 }, uColor: { value: new THREE.Color(color) } };
     const toonMaterial = new THREE.ShaderMaterial({

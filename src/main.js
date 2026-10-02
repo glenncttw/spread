@@ -93,19 +93,24 @@ function addEdgeDistance(geometry) {
 }
 
 // The toast hangs from a chain of groups: `placement` takes the position
-// sliders, `spin` and `travel` play the entrance, `follow` adds the small turn
-// toward the cursor and `bob` the float. The model is offset so they all turn
+// sliders, `spin` and `travel` play the entrance, `recoil` and `flip` the
+// color switch, `follow` adds the small turn toward the cursor and `bob` the
+// float. The model is offset so they all turn
 // it around its own middle.
+const recoil = new THREE.Group(); // color switch: pushed back and back again
 const travel = new THREE.Group(); // entrance: comes forward from the back
 const placement = new THREE.Group();
 const spin = new THREE.Group(); // entrance: stands up and turns
+const flip = new THREE.Group(); // color switch: tumbles end over end
 const follow = new THREE.Group();
 const bob = new THREE.Group(); // the float
+recoil.add(travel);
 travel.add(placement);
 placement.add(spin);
-spin.add(follow);
+spin.add(flip);
+flip.add(follow);
 follow.add(bob);
-scene.add(travel);
+scene.add(recoil);
 
 // The entrance, played as the loading screen lifts: the toast starts far
 // back, tipped over by 180°, and comes forward while it turns twice around and
@@ -124,12 +129,20 @@ function showIntro() {
   streaks.update(t, turn);
 }
 showIntro();
-// On every color switch the toast spins twice around in place, with the
-// same streaks, settling as the new color fills in.
+// On every color switch the toast tumbles twice end over end (around its
+// side-to-side axis, not the entrance's), dipping back a little and coming
+// forward again, with fewer streaks than the entrance, settling as the new
+// color fills in. It has its own groups and streaks, so it also works while
+// the entrance is still finishing.
 const whirl = { t: 1 };
+const switchStreaks = createStreaks('#ffedcb', { count: 3 });
+const switchStreakAxis = new THREE.Group();
+switchStreakAxis.rotation.z = -Math.PI / 2; // the streaks circle the x axis
+switchStreakAxis.add(switchStreaks.group);
+spin.add(switchStreakAxis);
 function spinToast(seconds) {
-  if (intro.t < 1) return; // the entrance is still playing
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const from = flip.rotation.x % (Math.PI * 2); // a switch picked mid-tumble carries on from there
   whirl.t = 0;
   gsap.to(whirl, {
     t: 1,
@@ -137,9 +150,12 @@ function spinToast(seconds) {
     ease: 'power2.out',
     overwrite: true,
     onUpdate() {
-      const turn = Math.PI * 4 * (1 - whirl.t);
-      spin.rotation.y = turn;
-      streaks.update(whirl.t, turn);
+      const turn = (Math.PI * 4 + from) * (1 - whirl.t);
+      flip.rotation.x = turn;
+      const away = new THREE.Vector3();
+      camera.getWorldDirection(away);
+      recoil.position.copy(away).multiplyScalar(3 * Math.sin(Math.PI * whirl.t));
+      switchStreaks.update(whirl.t, turn);
     },
   });
 }
@@ -151,7 +167,7 @@ let model = null;
 const letterRolls = []; // see shuffleLetters()
 const modelCenter = new THREE.Vector3();
 
-const meshes = [...streaks.meshes];
+const meshes = [...streaks.meshes, ...switchStreaks.meshes];
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
     if (!child.isMesh) return;
@@ -450,5 +466,5 @@ window.toast = {
   overlay,
   outline,
   shuffleLetters,
-  groups: { travel, placement, spin, follow, bob },
+  groups: { recoil, travel, placement, spin, flip, follow, bob },
 };
