@@ -122,6 +122,12 @@ function applyAll() {
 const spreadSwitch = createSpreadSwitch({
   dissolve,
   getColor: () => settings.spread,
+  getTiming: () => ({
+    outSeconds: settings.switchOut,
+    gapSeconds: settings.switchGap,
+    inSeconds: settings.switchIn,
+    variation: settings.switchVariation,
+  }),
   setColor: (color) => {
     settings.spread = color;
     applyAll();

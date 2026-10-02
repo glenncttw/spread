@@ -30,6 +30,8 @@ export function createSharedUniforms() {
     uGloss: { value: 60 },
     uLightDir2: { value: new THREE.Vector3() },
     uShine2: { value: 1 },
+    uShadowWobble: { value: 0.7 },
+    uShadowWobbleSize: { value: 2.5 },
   };
 }
 
@@ -92,6 +94,7 @@ export function createDissolveUniforms() {
     uDissolveDir: { value: new THREE.Vector2(-Math.SQRT1_2, -Math.SQRT1_2) },
     uDissolveSeed: { value: new THREE.Vector2() },
     uDissolveNoise: { value: new THREE.Vector2(2.5, 0.3) }, // scale, strength
+    uDissolveRange: { value: new THREE.Vector2(-0.4, 1.6) }, // where the front starts and ends
     uCenter: { value: new THREE.Vector3(0, 0.45, -0.17) },
     uRadius: { value: 1.3 },
   };
@@ -102,6 +105,7 @@ const dissolveGLSL = /* glsl */ `
   uniform vec2 uDissolveDir;
   uniform vec2 uDissolveSeed;
   uniform vec2 uDissolveNoise;
+  uniform vec2 uDissolveRange;
   uniform vec3 uCenter;
   uniform float uRadius;
   varying vec3 vViewPos;
@@ -124,8 +128,8 @@ const dissolveGLSL = /* glsl */ `
     float s = dot(rel, uDissolveDir) * 0.5 + 0.5;
     vec2 q = rel * uDissolveNoise.x + uDissolveSeed;
     s += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
-    float front = mix(-0.75, 1.75, uDissolve.x);
     float band = 0.2;
+    float front = mix(uDissolveRange.x, uDissolveRange.y, uDissolve.x);
     return uDissolve.y < 0.5
       ? clamp((s - front) / band, 0.0, 1.0)
       : clamp((front - s) / band, 0.0, 1.0);
@@ -149,8 +153,10 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
       varying vec3 vNormal;
       varying vec3 vViewDir;
       varying vec3 vViewPos;
+      varying vec3 vWorldPos;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vWorldPos = worldPos.xyz;
         vNormal = normalize(mat3(modelMatrix) * normal);
         vViewDir = cameraPosition - worldPos.xyz;
         vec4 viewPos = viewMatrix * worldPos;
@@ -174,8 +180,27 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
       uniform float uGloss;
       uniform vec3 uLightDir2;
       uniform float uShine2;
+      uniform float uShadowWobble;
+      uniform float uShadowWobbleSize;
       varying vec3 vNormal;
       varying vec3 vViewDir;
+      varying vec3 vWorldPos;
+
+      // Smooth 3D value noise, stuck to the toast's surface.
+      float hash31(vec3 p) {
+        return fract(sin(dot(p, vec3(17.1, 113.5, 61.7))) * 43758.5453);
+      }
+      float noise3(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(mix(hash31(i), hash31(i + vec3(1, 0, 0)), f.x),
+              mix(hash31(i + vec3(0, 1, 0)), hash31(i + vec3(1, 1, 0)), f.x), f.y),
+          mix(mix(hash31(i + vec3(0, 0, 1)), hash31(i + vec3(1, 0, 1)), f.x),
+              mix(hash31(i + vec3(0, 1, 1)), hash31(i + vec3(1, 1, 1)), f.x), f.y),
+          f.z);
+      }
       ${halftoneGLSL}
       #ifdef DISSOLVE
         ${dissolveGLSL}
@@ -229,6 +254,12 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
         vec3 L = normalize(uLightDir);
         vec3 V = normalize(vViewDir);
         float ndl = dot(N, L);
+        // Push the light/shadow border around with a little noise, so it wanders
+        // like a painted edge instead of running dead straight down the crust.
+        vec3 q = vWorldPos * uShadowWobbleSize;
+        // Faces turned well toward the light (the tops) are left alone so they stay clean.
+        float wobbleWeight = 1.0 - smoothstep(0.35, 0.65, ndl);
+        ndl += (noise3(q) * 0.65 + noise3(q * 2.7 + 11.0) * 0.35 - 0.5) * uShadowWobble * wobbleWeight;
 
         float lit = smoothstep(-0.02, 0.02, ndl);
         vec3 color = mix(uShade, uBase, lit);

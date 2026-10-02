@@ -22,6 +22,12 @@ export const defaults = {
   secondHighlight: 1,
   secondAround: -60,
   secondHeight: 30,
+  shadowWobble: 0.7,
+  shadowWobbleSize: 2.5,
+  switchOut: 1.8,
+  switchGap: 0.2,
+  switchIn: 1.8,
+  switchVariation: 0.5,
   outlineColor: palette.ink,
   thickness: 2,
   squiggle: 1.1,
@@ -45,6 +51,8 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   shared.uGloss.value = THREE.MathUtils.lerp(150, 15, s.highlightSize);
   shared.uShine.value = s.highlightDots;
   shared.uShine2.value = s.secondHighlight;
+  shared.uShadowWobble.value = s.shadowWobble;
+  shared.uShadowWobbleSize.value = s.shadowWobbleSize;
 
   outline.uniforms.uInk.value.set(s.outlineColor);
   outline.uniforms.uThickness.value = s.thickness;
@@ -103,6 +111,8 @@ export function createTweakPanel(settings, onChange) {
   shading.add(settings, 'amount', 0, 1, 0.01).name('Darkness');
   shading.add(settings, 'reach', -0.3, 1, 0.01).name('How far it reaches');
   shading.add(settings, 'rgbShift', 0, 6, 0.1).name('Color offset');
+  shading.add(settings, 'shadowWobble', 0, 1, 0.01).name('Shadow edge wobble');
+  shading.add(settings, 'shadowWobbleSize', 0.5, 10, 0.1).name('Wobble size');
 
   const light = gui.addFolder('Light');
   light.add(settings, 'lightAround', -180, 180, 1).name('Direction');
@@ -115,6 +125,12 @@ export function createTweakPanel(settings, onChange) {
   highlight.add(settings, 'secondHighlight', 0, 1, 0.01).name('Second highlight');
   highlight.add(settings, 'secondAround', -180, 180, 1).name('Second direction');
   highlight.add(settings, 'secondHeight', 5, 85, 1).name('Second height');
+
+  const switching = gui.addFolder('Spread switch');
+  switching.add(settings, 'switchOut', 0.3, 5, 0.05).name('Out duration (s)');
+  switching.add(settings, 'switchGap', 0, 2, 0.05).name('Pause before in (s)');
+  switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('In duration (s)');
+  switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation');
 
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');

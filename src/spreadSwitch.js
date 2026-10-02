@@ -15,12 +15,12 @@ export const flavors = [
 const easings = {
   inOutCubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
   inOutQuint: (t) => (t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2),
-  inBack: (t) => 2.2 * t ** 3 - 1.2 * t * t,
+  inOutSine: (t) => -(Math.cos(Math.PI * t) - 1) / 2,
   outCubic: (t) => 1 - (1 - t) ** 3,
   outBack: (t) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2,
   outQuart: (t) => 1 - (1 - t) ** 4,
 };
-const outEasings = ['inOutCubic', 'inOutQuint', 'inBack'];
+const outEasings = ['inOutCubic', 'inOutQuint', 'inOutSine'];
 const inEasings = ['outCubic', 'outBack', 'outQuart'];
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -41,15 +41,22 @@ function tween(duration, easing, onUpdate) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function roll(dissolve) {
-  // Roughly top right to bottom left, give or take 20°.
-  const angle = Math.PI * 1.25 + between(-0.35, 0.35);
+// `variation` (0..1) sets how far each roll strays from the middle values.
+const vary = (mid, spread, variation) => mid + between(-spread, spread) * variation;
+
+function roll(dissolve, variation) {
+  // Top right to bottom left, give or take up to 25°.
+  const angle = Math.PI * 1.25 + vary(0, 0.44, variation);
   dissolve.uDissolveDir.value.set(Math.cos(angle), Math.sin(angle));
   dissolve.uDissolveSeed.value.set(between(0, 100), between(0, 100));
-  dissolve.uDissolveNoise.value.set(between(1.5, 4), between(0.15, 0.45));
+  const strength = vary(0.3, 0.2, variation);
+  dissolve.uDissolveNoise.value.set(vary(2.75, 1.75, variation), strength);
+  // Start the front just before the spread's nearest edge and end it just past
+  // the farthest, so no time is spent sweeping over empty space.
+  dissolve.uDissolveRange.value.set(-0.25 - strength * 0.5, 1.25 + strength * 0.5 + 0.2);
 }
 
-export function createSpreadSwitch({ dissolve, getColor, setColor }) {
+export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) {
   let index = Math.max(0, flavors.findIndex((f) => f.color === getColor()));
   let busy = false;
 
@@ -75,20 +82,23 @@ export function createSpreadSwitch({ dissolve, getColor, setColor }) {
     button.disabled = true;
     index = (index + 1) % flavors.length;
 
+    const { outSeconds, gapSeconds, inSeconds, variation } = getTiming();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const speed = reduceMotion ? 0.4 : 1;
     const p = dissolve.uDissolve.value;
 
-    roll(dissolve);
+    roll(dissolve, variation);
     p.set(0, 0);
-    await tween(between(750, 1100) * speed, easings[pick(outEasings)], (t) => p.set(t, 0));
+    const outEase = variation > 0 ? pick(outEasings) : 'inOutCubic';
+    await tween(vary(outSeconds, outSeconds * 0.2, variation) * 1000 * speed, easings[outEase], (t) => p.set(t, 0));
 
     setColor(flavors[index].color);
-    await wait(between(120, 260) * speed);
+    await wait(gapSeconds * 1000 * speed);
 
-    roll(dissolve);
+    roll(dissolve, variation);
     p.set(0, 1);
-    await tween(between(850, 1250) * speed, easings[pick(inEasings)], (t) => p.set(t, 1));
+    const inEase = variation > 0 ? pick(inEasings) : 'outCubic';
+    await tween(vary(inSeconds, inSeconds * 0.2, variation) * 1000 * speed, easings[inEase], (t) => p.set(t, 1));
     p.set(0, 0);
 
     showNext();
