@@ -375,6 +375,12 @@ export function createOutlineMaterial() {
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
+      uBgSoft: { value: 0.6 }, // 0 = full strength, 1 = pale and gentle
+      // Rounded frame around the scene, in CSS pixels:
+      // x = border width, y = corner radius, z = outline width.
+      uFrame: { value: new THREE.Vector3(20, 32, 2) },
+      uFrameColor: { value: new THREE.Color('#ffedcb') },
+      uFrameInk: { value: new THREE.Color(palette.ink) },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -407,7 +413,17 @@ export function createOutlineMaterial() {
       uniform float uBgDots;
       uniform float uBgNoiseOpacity;
       uniform float uBgNoiseScale;
+      uniform float uBgSoft;
+      uniform vec3 uFrame;
+      uniform vec3 uFrameColor;
+      uniform vec3 uFrameInk;
       varying vec2 vUv;
+
+      // Signed distance to a rounded rectangle (negative inside).
+      float roundRect(vec2 p, vec2 halfSize, float r) {
+        vec2 q = abs(p) - halfSize + r;
+        return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+      }
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -495,12 +511,12 @@ export function createOutlineMaterial() {
       // Pink to orange to green from top to bottom, with a slowly drifting
       // simplex-noise color layer on top in soft light, then one angled
       // halftone screen over the result.
-      vec3 background(vec2 cssPx) {
-        float aspect = uResolution.x / uResolution.y;
-        vec2 p = vec2(vUv.x * aspect, vUv.y);
+      // bgUv runs 0..1 across the inside of the frame.
+      vec3 background(vec2 cssPx, vec2 bgUv, float aspect) {
+        vec2 p = vec2(bgUv.x * aspect, bgUv.y);
         float t = uBgTime * 0.05;
 
-        float g = vUv.y + snoise(vec3(p * 0.9, t)) * 0.12 * uBgFlow;
+        float g = bgUv.y + snoise(vec3(p * 0.9, t)) * 0.12 * uBgFlow;
         g = clamp(g, 0.0, 1.0);
         vec3 color = g > 0.5
           ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
@@ -510,7 +526,11 @@ export function createOutlineMaterial() {
         float n = snoise(vec3(q + vec2(0.0, t * 0.6), t)) * 0.5 + 0.5;
         n = mix(n, snoise(vec3(q * 1.9 + 7.3, t * 1.4)) * 0.5 + 0.5, 0.3);
         vec3 layer = noiseRamp(n);
+        // Softer: the noise colors lean lighter (soft light then mostly
+        // brightens instead of muddying), and the whole thing goes a bit pastel.
+        layer = mix(layer, vec3(1.0), uBgSoft * 0.45);
         color = mix(color, softLight(color, layer), uBgNoiseOpacity);
+        color = mix(color, vec3(1.0), uBgSoft * 0.22);
 
         // One halftone screen: dots grow where the color is darker and are
         // printed in a deeper, richer version of the color underneath.
@@ -518,11 +538,11 @@ export function createOutlineMaterial() {
         vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
         float d = length(fract(grid) - 0.5);
         float luma = dot(color, vec3(0.299, 0.587, 0.114));
-        float r = sqrt(clamp((1.0 - luma) * 1.2 + 0.12, 0.0, 1.0)) * 0.55;
+        float r = sqrt(clamp((1.0 - luma) * mix(1.2, 0.6, uBgSoft) + mix(0.12, 0.3, uBgSoft), 0.0, 1.0)) * 0.55;
         float aa = fwidth(d) * 0.75;
         float dotMask = 1.0 - smoothstep(r - aa, r + aa, d);
-        vec3 ink = pow(color, vec3(1.8)) * 0.85;
-        vec3 paper = mix(color, vec3(1.0), 0.1);
+        vec3 ink = mix(pow(color, vec3(1.8)) * 0.85, color * 0.88, uBgSoft);
+        vec3 paper = mix(color, vec3(1.0), mix(0.1, 0.16, uBgSoft));
         return mix(color, mix(paper, ink, dotMask), uBgDots);
       }
 
@@ -579,12 +599,26 @@ export function createOutlineMaterial() {
           smoothstep(1.0, 1.15, normalEdge)
         );
 
+        // The frame: the scene sits in a rounded window inside a cream border,
+        // outlined with the same wobbly pen as the toast.
+        vec2 view = uResolution / uPixelRatio;
+        vec2 inner = max(view - 2.0 * uFrame.x, vec2(1.0));
+        float frameDist = roundRect(cssPx + wobble * uWobble * 0.5 - view * 0.5, inner * 0.5, uFrame.y);
+        float aaPx = 0.75 / uPixelRatio;
+        float inside = 1.0 - smoothstep(-aaPx, aaPx, frameDist);
+        float frameLine = 1.0 - smoothstep(uFrame.z * 0.5 - aaPx, uFrame.z * 0.5 + aaPx, abs(frameDist + uFrame.z * 0.5));
+
         vec3 color = texture2D(tColor, vUv).rgb;
         // Nothing was drawn here (only the clear color): show the gradient.
-        if (texture2D(tDepth, vUv).x >= 0.99999) color = background(cssPx);
+        if (texture2D(tDepth, vUv).x >= 0.99999) {
+          vec2 bgUv = (cssPx - uFrame.x) / inner;
+          color = background(cssPx, bgUv, inner.x / inner.y);
+        }
+        color = mix(color, uInk, edge);
+        color = mix(uFrameColor, color, inside);
         // A touch of paper grain.
         color *= 1.0 - hash(floor(cssPx)) * 0.035;
-        gl_FragColor = vec4(mix(color, uInk, edge), 1.0);
+        gl_FragColor = vec4(mix(color, uFrameInk, frameLine), 1.0);
       }
     `,
     depthTest: false,

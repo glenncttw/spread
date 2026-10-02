@@ -45,6 +45,14 @@ export const defaults = {
   bgDots: 0.7,
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
+  bgSoft: 0.6,
+  // Frame sizes are what they measure on a 1440px-wide screen; they scale
+  // with the window width from there.
+  frameBorder: 20,
+  frameRadius: 32,
+  frameLine: 2,
+  frameColor: '#ffedcb',
+  frameInk: palette.ink,
   spin: true,
 };
 
@@ -78,7 +86,28 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgDots.value = s.bgDots;
   u.uBgNoiseOpacity.value = s.bgNoise;
   u.uBgNoiseScale.value = s.bgNoiseScale;
+  u.uBgSoft.value = s.bgSoft;
+  u.uFrameColor.value.set(s.frameColor);
+  u.uFrameInk.value.set(s.frameInk);
+  const f = frameSize(s);
+  u.uFrame.value.set(f.border, f.radius, f.line);
+  const root = document.documentElement.style;
+  root.setProperty('--frame-border', `${f.border}px`);
+  root.setProperty('--frame-radius', `${f.radius}px`);
+  root.setProperty('--frame-color', s.frameColor);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', s.frameColor);
   controls.autoRotate = s.spin;
+}
+
+// The frame scales with the window width (the sizes are set for 1440px),
+// with a small floor so it doesn't vanish on phones.
+export function frameSize(s, width = window.innerWidth) {
+  const scale = width / 1440;
+  return {
+    border: Math.max(s.frameBorder * scale, s.frameBorder * 0.5),
+    radius: Math.max(s.frameRadius * scale, s.frameRadius * 0.6),
+    line: Math.max(s.frameLine * scale, 1.5),
+  };
 }
 
 function setDirection(target, aroundDeg, heightDeg) {
@@ -154,6 +183,7 @@ export function createTweakPanel(settings, onChange) {
   bg.addColor(settings, 'bgTop').name('Top');
   bg.addColor(settings, 'bgMiddle').name('Middle');
   bg.addColor(settings, 'bgBottom').name('Bottom');
+  bg.add(settings, 'bgSoft', 0, 1, 0.01).name('Softness');
   bg.add(settings, 'bgNoise', 0, 1, 0.01).name('Noise colors (soft light)');
   bg.add(settings, 'bgNoiseScale', 0.2, 5, 0.05).name('Noise size');
   bg.add(settings, 'bgFlow', 0, 1, 0.01).name('Swirl');
@@ -161,6 +191,13 @@ export function createTweakPanel(settings, onChange) {
   bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
   bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');
   bg.add(settings, 'bgDots', 0, 1, 0.01).name('Dot strength');
+
+  const frame = gui.addFolder('Frame (sizes at 1440px wide)');
+  frame.add(settings, 'frameBorder', 0, 60, 1).name('Border (px)');
+  frame.add(settings, 'frameRadius', 0, 80, 1).name('Corner radius (px)');
+  frame.add(settings, 'frameLine', 0, 6, 0.25).name('Outline (px)');
+  frame.addColor(settings, 'frameColor').name('Border color');
+  frame.addColor(settings, 'frameInk').name('Outline color');
 
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');
