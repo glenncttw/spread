@@ -114,7 +114,7 @@ const dissolveGLSL = /* glsl */ `
   uniform float uCutWidth;
   uniform vec3 uCenter;
   uniform float uRadius;
-  varying vec3 vViewPos;
+  varying float vEdge; // distance to the spread's own rim, in world units
 
   float dHash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -129,19 +129,28 @@ const dissolveGLSL = /* glsl */ `
 
   // How far inside the remaining shape this point is (negative = cut away).
   float dissolveMargin() {
-    if (uDissolve.y < 0.5 && uDissolve.x <= 0.0) return 1e3;
-    vec3 center = (viewMatrix * vec4(uCenter, 1.0)).xyz;
-    vec2 rel = (vViewPos.xy - center.xy) / uRadius;
-
-    // Shrink toward the bottom left; grow from the top right.
-    vec2 anchor = (uDissolve.y < 0.5 ? 0.6 : -0.6) * uDissolveDir;
+    if (uDissolve.y < 0.5 && uDissolve.x <= 0.0) return 1.0;
+    // Work top-down on the toast (world x/z) so the cut behaves like a cookie
+    // cutter: it slices straight down through the spread's rim instead of
+    // leaving flat walls. The screen direction (top right to bottom left) is
+    // turned into a direction across the toast for the current camera.
+    vec3 dirWorld = transpose(mat3(viewMatrix)) * vec3(uDissolveDir, 0.0);
+    vec2 dir = normalize(dirWorld.xz + vec2(1e-5));
+    vec2 rel = (vWorldPos.xz - uCenter.xz) / uRadius;
+    vec2 anchor = (uDissolve.y < 0.5 ? 0.6 : -0.6) * dir;
     float d = length(rel - anchor);
     vec2 q = rel * uDissolveNoise.x + uDissolveSeed + uDissolveTime * 0.6;
     d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
 
     float maxR = 1.3 + uDissolveNoise.y * 0.5;
     float r = uDissolve.y < 0.5 ? mix(maxR, 0.0, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
-    return r - d;
+    // Blend the shrinking blob with the spread's own rim using a smooth
+    // minimum, so where the two meet the shape rounds off instead of
+    // forming a sharp corner.
+    float blob = (r - d) * uRadius;
+    float k = 0.4;
+    float h = clamp(0.5 + 0.5 * (vEdge - blob) / k, 0.0, 1.0);
+    return mix(vEdge, blob, h) - k * h * (1.0 - h);
   }
 `;
 
@@ -163,6 +172,10 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
       varying vec3 vViewDir;
       varying vec3 vViewPos;
       varying vec3 vWorldPos;
+      #ifdef DISSOLVE
+        attribute float edgeDist;
+        varying float vEdge;
+      #endif
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPos = worldPos.xyz;
@@ -170,6 +183,9 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
         vViewDir = cameraPosition - worldPos.xyz;
         vec4 viewPos = viewMatrix * worldPos;
         vViewPos = viewPos.xyz;
+        #ifdef DISSOLVE
+          vEdge = edgeDist;
+        #endif
         gl_Position = projectionMatrix * viewPos;
       }
     `,
@@ -299,16 +315,24 @@ export function createNormalMaterial(dissolve) {
     uniforms: { ...dissolve },
     vertexShader: /* glsl */ `
       varying vec3 vViewNormal;
-      varying vec3 vViewPos;
+      varying vec3 vWorldPos;
+      #ifdef DISSOLVE
+        attribute float edgeDist;
+        varying float vEdge;
+      #endif
       void main() {
         vViewNormal = normalize(normalMatrix * normal);
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
-        vViewPos = viewPos.xyz;
+        #ifdef DISSOLVE
+          vEdge = edgeDist;
+        #endif
         gl_Position = projectionMatrix * viewPos;
       }
     `,
     fragmentShader: /* glsl */ `
       varying vec3 vViewNormal;
+      varying vec3 vWorldPos;
       #ifdef DISSOLVE
         ${dissolveGLSL}
       #endif
@@ -348,7 +372,9 @@ export function createOutlineMaterial() {
       uBgFlow: { value: 0.35 }, // how much the noise bends the gradient
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
-      uBgDots: { value: 0.45 }, // dot strength
+      uBgDots: { value: 0.7 }, // dot strength
+      uBgNoiseOpacity: { value: 0.65 },
+      uBgNoiseScale: { value: 1.2 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -379,6 +405,8 @@ export function createOutlineMaterial() {
       uniform float uBgDotSize;
       uniform float uBgDotAngle;
       uniform float uBgDots;
+      uniform float uBgNoiseOpacity;
+      uniform float uBgNoiseScale;
       varying vec2 vUv;
 
       float hash(vec2 p) {
@@ -392,31 +420,110 @@ export function createOutlineMaterial() {
                    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
       }
 
-      float fbm(vec2 p) {
-        return noise(p) * 0.55 + noise(p * 2.1 + 5.3) * 0.3 + noise(p * 4.3 + 9.1) * 0.15;
+      // 3D simplex noise (Ashima Arts / Stefan Gustavson, MIT licence).
+      vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
+      vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+      float snoise(vec3 v) {
+        const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+        const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+        vec3 i = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min(g.xyz, l.zxy);
+        vec3 i2 = max(g.xyz, l.zxy);
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy;
+        vec3 x3 = x0 - D.yyy;
+        i = mod289(i);
+        vec4 p = permute(permute(permute(
+                  i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+        float n_ = 0.142857142857;
+        vec3 ns = n_ * D.wyz - D.xzx;
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_);
+        vec4 x = x_ * ns.x + ns.yyyy;
+        vec4 y = y_ * ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+        vec4 b0 = vec4(x.xy, y.xy);
+        vec4 b1 = vec4(x.zw, y.zw);
+        vec4 s0 = floor(b0) * 2.0 + 1.0;
+        vec4 s1 = floor(b1) * 2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+        vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+        vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+        vec3 p0 = vec3(a0.xy, h.x);
+        vec3 p1 = vec3(a0.zw, h.y);
+        vec3 p2 = vec3(a1.xy, h.z);
+        vec3 p3 = vec3(a1.zw, h.w);
+        vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+        p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+        vec4 m = max(0.5 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+        m = m * m;
+        return 105.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
       }
 
-      // Pink to orange to green from top to bottom. Slow-moving noise bends the
-      // bands so the colors drift, and an angled halftone screen sits on top.
+      // Soft light blend (same formula as CSS / Photoshop).
+      vec3 softLight(vec3 base, vec3 blend) {
+        vec3 d = mix(sqrt(base), ((16.0 * base - 12.0) * base + 4.0) * base, step(base, vec3(0.25)));
+        return mix(
+          base - (1.0 - 2.0 * blend) * base * (1.0 - base),
+          base + (2.0 * blend - 1.0) * (d - base),
+          step(0.5, blend)
+        );
+      }
+
+      // Colorful noise layer: cyan, blue, magenta, yellow and orange fields.
+      vec3 noiseRamp(float x) {
+        x = clamp(x, 0.0, 1.0) * 4.0;
+        vec3 c0 = vec3(0.18, 0.88, 1.0);
+        vec3 c1 = vec3(0.29, 0.24, 1.0);
+        vec3 c2 = vec3(1.0, 0.25, 0.82);
+        vec3 c3 = vec3(1.0, 0.91, 0.23);
+        vec3 c4 = vec3(1.0, 0.35, 0.12);
+        if (x < 1.0) return mix(c0, c1, smoothstep(0.0, 1.0, x));
+        if (x < 2.0) return mix(c1, c2, smoothstep(1.0, 2.0, x));
+        if (x < 3.0) return mix(c2, c3, smoothstep(2.0, 3.0, x));
+        return mix(c3, c4, smoothstep(3.0, 4.0, x));
+      }
+
+      // Pink to orange to green from top to bottom, with a slowly drifting
+      // simplex-noise color layer on top in soft light, then one angled
+      // halftone screen over the result.
       vec3 background(vec2 cssPx) {
-        vec2 uv = vUv;
         float aspect = uResolution.x / uResolution.y;
-        vec2 p = vec2(uv.x * aspect, uv.y) * 1.6;
-        float t = uBgTime * 0.06;
-        vec2 warp = vec2(fbm(p + vec2(t, -t * 0.7)), fbm(p + vec2(3.7 - t * 0.8, 1.3 + t)));
-        float g = uv.y + (warp.x - 0.5) * uBgFlow + (warp.y - 0.5) * uBgFlow * 0.5;
+        vec2 p = vec2(vUv.x * aspect, vUv.y);
+        float t = uBgTime * 0.05;
+
+        float g = vUv.y + snoise(vec3(p * 0.9, t)) * 0.12 * uBgFlow;
         g = clamp(g, 0.0, 1.0);
         vec3 color = g > 0.5
           ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
           : mix(uBgBottom, uBgMid, smoothstep(0.0, 0.5, g));
 
+        vec2 q = p * uBgNoiseScale;
+        float n = snoise(vec3(q + vec2(0.0, t * 0.6), t)) * 0.5 + 0.5;
+        n = mix(n, snoise(vec3(q * 1.9 + 7.3, t * 1.4)) * 0.5 + 0.5, 0.3);
+        vec3 layer = noiseRamp(n);
+        color = mix(color, softLight(color, layer), uBgNoiseOpacity);
+
+        // One halftone screen: dots grow where the color is darker and are
+        // printed in a deeper, richer version of the color underneath.
         float c = cos(uBgDotAngle), s = sin(uBgDotAngle);
         vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
         float d = length(fract(grid) - 0.5);
-        float r = mix(0.28, 0.42, fbm(p * 1.3 - t * 1.5));
+        float luma = dot(color, vec3(0.299, 0.587, 0.114));
+        float r = sqrt(clamp((1.0 - luma) * 1.2 + 0.12, 0.0, 1.0)) * 0.55;
         float aa = fwidth(d) * 0.75;
         float dotMask = 1.0 - smoothstep(r - aa, r + aa, d);
-        return mix(color, color * vec3(0.86, 0.8, 0.84), dotMask * uBgDots);
+        vec3 ink = pow(color, vec3(1.8)) * 0.85;
+        vec3 paper = mix(color, vec3(1.0), 0.1);
+        return mix(color, mix(paper, ink, dotMask), uBgDots);
       }
 
       float linearDepth(vec2 uv) {

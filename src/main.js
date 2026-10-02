@@ -58,6 +58,31 @@ const materials = {
 const plainNormals = createNormalMaterial();
 const normalMaterials = { 'Purple Spread': createNormalMaterial(dissolve) };
 
+// For each vertex of the spread: how far it is (across the toast) from the
+// spread's rim, where the surface turns down. The color switch blends its
+// shrinking shape with this so the spread stays round and blobby.
+function addEdgeDistance(geometry) {
+  const pos = geometry.attributes.position;
+  const nrm = geometry.attributes.normal;
+  const rim = [];
+  for (let i = 0; i < pos.count; i++) {
+    if (Math.abs(nrm.getY(i)) < 0.35) rim.push(pos.getX(i), pos.getZ(i));
+  }
+  const dist = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    let best = Infinity;
+    for (let j = 0; j < rim.length; j += 2) {
+      const dx = x - rim[j];
+      const dz = z - rim[j + 1];
+      best = Math.min(best, dx * dx + dz * dz);
+    }
+    dist[i] = Math.sqrt(best) + 0.03;
+  }
+  geometry.setAttribute('edgeDist', new THREE.BufferAttribute(dist, 1));
+}
+
 const meshes = [];
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
@@ -66,6 +91,7 @@ new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
     child.userData.toonMaterial = materials[name] ?? materials['Purple Crumb'];
     child.userData.normalMaterial = normalMaterials[name] ?? plainNormals;
     child.material = child.userData.toonMaterial;
+    if (name === 'Purple Spread') addEdgeDistance(child.geometry);
     meshes.push(child);
   });
   scene.add(gltf.scene);

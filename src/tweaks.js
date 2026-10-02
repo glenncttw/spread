@@ -42,7 +42,9 @@ export const defaults = {
   bgSpeed: 1,
   bgDotSize: 6,
   bgDotAngle: -12,
-  bgDots: 0.45,
+  bgDots: 0.7,
+  bgNoise: 0.65,
+  bgNoiseScale: 1.2,
   spin: true,
 };
 
@@ -74,6 +76,8 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgDotSize.value = s.bgDotSize;
   u.uBgDotAngle.value = THREE.MathUtils.degToRad(s.bgDotAngle);
   u.uBgDots.value = s.bgDots;
+  u.uBgNoiseOpacity.value = s.bgNoise;
+  u.uBgNoiseScale.value = s.bgNoiseScale;
   controls.autoRotate = s.spin;
 }
 
@@ -150,6 +154,8 @@ export function createTweakPanel(settings, onChange) {
   bg.addColor(settings, 'bgTop').name('Top');
   bg.addColor(settings, 'bgMiddle').name('Middle');
   bg.addColor(settings, 'bgBottom').name('Bottom');
+  bg.add(settings, 'bgNoise', 0, 1, 0.01).name('Noise colors (soft light)');
+  bg.add(settings, 'bgNoiseScale', 0.2, 5, 0.05).name('Noise size');
   bg.add(settings, 'bgFlow', 0, 1, 0.01).name('Swirl');
   bg.add(settings, 'bgSpeed', 0, 5, 0.05).name('Movement speed');
   bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
