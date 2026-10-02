@@ -115,6 +115,8 @@ function applyAll() {
     controls,
     pixelRatio: renderer.getPixelRatio(),
   });
+  dissolve.uCutInk.value.set(settings.outlineColor);
+  dissolve.uCutWidth.value = settings.thickness * 1.5 * renderer.getPixelRatio();
   applySurfaceColor(materials['Purple Crust'], settings.crust, palette.crust);
   applySurfaceColor(materials['Purple Crumb'], settings.crumb, palette.crumb);
   applySurfaceColor(materials['Purple Spread'], settings.spread, palette.spread);
@@ -147,7 +149,10 @@ resize();
 renderer.setAnimationLoop(() => {
   controls.update();
   updateLights(settings, shared, camera, controls.target);
-  outline.uniforms.uTime.value = still ? 0 : performance.now() / 1000;
+  const time = still ? 0 : performance.now() / 1000;
+  outline.uniforms.uTime.value = time;
+  dissolve.uDissolveTime.value = time;
+  outline.uniforms.uBgTime.value = time * settings.bgSpeed;
 
   renderer.setRenderTarget(colorTarget);
   renderer.render(scene, camera);

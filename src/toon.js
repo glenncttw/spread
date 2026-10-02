@@ -4,6 +4,7 @@ import * as THREE from 'three';
 // turned off in main.js so these hex codes show up on screen exactly as written.
 export const palette = {
   paper: '#f4ecdc',
+  background: ['#ff71c3', '#ff9c41', '#9cdd33'], // top, middle, bottom
   ink: '#211d1e',
   crumb: { base: '#f6dfa8', shade: '#e6c48a', dots: '#b98a4e' },
   crust: { base: '#c46a2c', shade: '#a9531f', dots: '#6e2c0e' },
@@ -83,18 +84,21 @@ const halftoneGLSL = /* glsl */ `
   }
 `;
 
-// Dissolve for swapping the spread color. The front sweeps across the spread
-// in screen directions (top right to bottom left by default), roughened by
-// noise, and leaves a trail of halftone dots behind it. `uDissolve.x` is the
-// progress (0..1); `uDissolve.y` is 0 while the color fades out and 1 while
-// the new one fades in.
+// Shrink-and-grow for swapping the spread color. The spread stays a solid
+// shape: its edge is cut by a wobbly blob that shrinks toward the bottom left
+// until nothing is left, then the new color grows back out from the top right.
+// The outline pass sees the same cut, so the ink line follows the edge as it
+// moves. `uDissolve.x` is the progress (0..1); `uDissolve.y` is 0 while the
+// old color shrinks away and 1 while the new one grows in.
 export function createDissolveUniforms() {
   return {
     uDissolve: { value: new THREE.Vector2(0, 0) },
     uDissolveDir: { value: new THREE.Vector2(-Math.SQRT1_2, -Math.SQRT1_2) },
     uDissolveSeed: { value: new THREE.Vector2() },
     uDissolveNoise: { value: new THREE.Vector2(2.5, 0.3) }, // scale, strength
-    uDissolveRange: { value: new THREE.Vector2(-0.4, 1.6) }, // where the front starts and ends
+    uDissolveTime: { value: 0 },
+    uCutInk: { value: new THREE.Color(palette.ink) },
+    uCutWidth: { value: 3 }, // pixels
     uCenter: { value: new THREE.Vector3(0, 0.45, -0.17) },
     uRadius: { value: 1.3 },
   };
@@ -105,7 +109,9 @@ const dissolveGLSL = /* glsl */ `
   uniform vec2 uDissolveDir;
   uniform vec2 uDissolveSeed;
   uniform vec2 uDissolveNoise;
-  uniform vec2 uDissolveRange;
+  uniform float uDissolveTime;
+  uniform vec3 uCutInk;
+  uniform float uCutWidth;
   uniform vec3 uCenter;
   uniform float uRadius;
   varying vec3 vViewPos;
@@ -121,18 +127,21 @@ const dissolveGLSL = /* glsl */ `
                mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y);
   }
 
-  // 1 = fully there, 0 = gone, in between = the dotted edge of the front.
-  float dissolveVisibility() {
+  // How far inside the remaining shape this point is (negative = cut away).
+  float dissolveMargin() {
+    if (uDissolve.y < 0.5 && uDissolve.x <= 0.0) return 1e3;
     vec3 center = (viewMatrix * vec4(uCenter, 1.0)).xyz;
     vec2 rel = (vViewPos.xy - center.xy) / uRadius;
-    float s = dot(rel, uDissolveDir) * 0.5 + 0.5;
-    vec2 q = rel * uDissolveNoise.x + uDissolveSeed;
-    s += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
-    float band = 0.2;
-    float front = mix(uDissolveRange.x, uDissolveRange.y, uDissolve.x);
-    return uDissolve.y < 0.5
-      ? clamp((s - front) / band, 0.0, 1.0)
-      : clamp((front - s) / band, 0.0, 1.0);
+
+    // Shrink toward the bottom left; grow from the top right.
+    vec2 anchor = (uDissolve.y < 0.5 ? 0.6 : -0.6) * uDissolveDir;
+    float d = length(rel - anchor);
+    vec2 q = rel * uDissolveNoise.x + uDissolveSeed + uDissolveTime * 0.6;
+    d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
+
+    float maxR = 1.3 + uDissolveNoise.y * 0.5;
+    float r = uDissolve.y < 0.5 ? mix(maxR, 0.0, uDissolve.x) : mix(0.0, maxR, uDissolve.x);
+    return r - d;
   }
 `;
 
@@ -246,8 +255,10 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
 
       void main() {
         #ifdef DISSOLVE
-          float visible = dissolveVisibility();
-          if (visible < 0.999 && halftone(gl_FragCoord.xy, uAngle, visible) < 0.5) discard;
+          float margin = dissolveMargin();
+          if (margin < 0.0) discard;
+          // Ink along the cut edge, a few pixels wide whatever the zoom.
+          float cutLine = 1.0 - smoothstep(uCutWidth - 1.0, uCutWidth, margin / max(fwidth(margin), 1e-5));
         #endif
 
         vec3 N = normalize(vNormal);
@@ -269,6 +280,9 @@ export function createToonMaterial({ base, shade, dots, specular = 0 }, shared, 
 
         color = addShine(color, N, V, L, 1.0, vec2(0.5 * uDotSize));
         color = addShine(color, N, V, normalize(uLightDir2), uShine2, vec2(0.0));
+        #ifdef DISSOLVE
+          color = mix(color, uCutInk, cutLine);
+        #endif
 
         gl_FragColor = vec4(color, 1.0);
       }
@@ -300,7 +314,7 @@ export function createNormalMaterial(dissolve) {
       #endif
       void main() {
         #ifdef DISSOLVE
-          if (dissolveVisibility() < 0.999) discard;
+          if (dissolveMargin() < 0.0) discard;
         #endif
         gl_FragColor = vec4(normalize(vViewNormal) * 0.5 + 0.5, 1.0);
       }
@@ -327,6 +341,14 @@ export function createOutlineMaterial() {
       uThickness: { value: 2.0 },
       uWobble: { value: 1.1 },
       uBoilFps: { value: 6.0 },
+      uBgTop: { value: new THREE.Color(palette.background[0]) },
+      uBgMid: { value: new THREE.Color(palette.background[1]) },
+      uBgBottom: { value: new THREE.Color(palette.background[2]) },
+      uBgTime: { value: 0 },
+      uBgFlow: { value: 0.35 }, // how much the noise bends the gradient
+      uBgDotSize: { value: 6 }, // CSS pixels
+      uBgDotAngle: { value: -0.2 }, // radians
+      uBgDots: { value: 0.45 }, // dot strength
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -349,6 +371,14 @@ export function createOutlineMaterial() {
       uniform float uThickness;
       uniform float uWobble;
       uniform float uBoilFps;
+      uniform vec3 uBgTop;
+      uniform vec3 uBgMid;
+      uniform vec3 uBgBottom;
+      uniform float uBgTime;
+      uniform float uBgFlow;
+      uniform float uBgDotSize;
+      uniform float uBgDotAngle;
+      uniform float uBgDots;
       varying vec2 vUv;
 
       float hash(vec2 p) {
@@ -360,6 +390,33 @@ export function createOutlineMaterial() {
         f = f * f * (3.0 - 2.0 * f);
         return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
                    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+
+      float fbm(vec2 p) {
+        return noise(p) * 0.55 + noise(p * 2.1 + 5.3) * 0.3 + noise(p * 4.3 + 9.1) * 0.15;
+      }
+
+      // Pink to orange to green from top to bottom. Slow-moving noise bends the
+      // bands so the colors drift, and an angled halftone screen sits on top.
+      vec3 background(vec2 cssPx) {
+        vec2 uv = vUv;
+        float aspect = uResolution.x / uResolution.y;
+        vec2 p = vec2(uv.x * aspect, uv.y) * 1.6;
+        float t = uBgTime * 0.06;
+        vec2 warp = vec2(fbm(p + vec2(t, -t * 0.7)), fbm(p + vec2(3.7 - t * 0.8, 1.3 + t)));
+        float g = uv.y + (warp.x - 0.5) * uBgFlow + (warp.y - 0.5) * uBgFlow * 0.5;
+        g = clamp(g, 0.0, 1.0);
+        vec3 color = g > 0.5
+          ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
+          : mix(uBgBottom, uBgMid, smoothstep(0.0, 0.5, g));
+
+        float c = cos(uBgDotAngle), s = sin(uBgDotAngle);
+        vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
+        float d = length(fract(grid) - 0.5);
+        float r = mix(0.28, 0.42, fbm(p * 1.3 - t * 1.5));
+        float aa = fwidth(d) * 0.75;
+        float dotMask = 1.0 - smoothstep(r - aa, r + aa, d);
+        return mix(color, color * vec3(0.86, 0.8, 0.84), dotMask * uBgDots);
       }
 
       float linearDepth(vec2 uv) {
@@ -416,6 +473,8 @@ export function createOutlineMaterial() {
         );
 
         vec3 color = texture2D(tColor, vUv).rgb;
+        // Nothing was drawn here (only the clear color): show the gradient.
+        if (texture2D(tDepth, vUv).x >= 0.99999) color = background(cssPx);
         // A touch of paper grain.
         color *= 1.0 - hash(floor(cssPx)) * 0.035;
         gl_FragColor = vec4(mix(color, uInk, edge), 1.0);

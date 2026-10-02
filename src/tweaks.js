@@ -35,7 +35,14 @@ export const defaults = {
   crust: palette.crust.base,
   crumb: palette.crumb.base,
   spread: palette.spread.base,
-  paper: palette.paper,
+  bgTop: palette.background[0],
+  bgMiddle: palette.background[1],
+  bgBottom: palette.background[2],
+  bgFlow: 0.35,
+  bgSpeed: 1,
+  bgDotSize: 6,
+  bgDotAngle: -12,
+  bgDots: 0.45,
   spin: true,
 };
 
@@ -59,7 +66,14 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   outline.uniforms.uWobble.value = s.squiggle;
   outline.uniforms.uBoilFps.value = s.boil;
 
-  scene.background.set(s.paper);
+  const u = outline.uniforms;
+  u.uBgTop.value.set(s.bgTop);
+  u.uBgMid.value.set(s.bgMiddle);
+  u.uBgBottom.value.set(s.bgBottom);
+  u.uBgFlow.value = s.bgFlow;
+  u.uBgDotSize.value = s.bgDotSize;
+  u.uBgDotAngle.value = THREE.MathUtils.degToRad(s.bgDotAngle);
+  u.uBgDots.value = s.bgDots;
   controls.autoRotate = s.spin;
 }
 
@@ -132,6 +146,16 @@ export function createTweakPanel(settings, onChange) {
   switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('In duration (s)');
   switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation');
 
+  const bg = gui.addFolder('Background');
+  bg.addColor(settings, 'bgTop').name('Top');
+  bg.addColor(settings, 'bgMiddle').name('Middle');
+  bg.addColor(settings, 'bgBottom').name('Bottom');
+  bg.add(settings, 'bgFlow', 0, 1, 0.01).name('Swirl');
+  bg.add(settings, 'bgSpeed', 0, 5, 0.05).name('Movement speed');
+  bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
+  bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');
+  bg.add(settings, 'bgDots', 0, 1, 0.01).name('Dot strength');
+
   const outlines = gui.addFolder('Outlines');
   outlines.addColor(settings, 'outlineColor').name('Color');
   outlines.add(settings, 'thickness', 0.5, 5, 0.1).name('Thickness');
@@ -142,7 +166,6 @@ export function createTweakPanel(settings, onChange) {
   colors.addColor(settings, 'crust').name('Crust');
   colors.addColor(settings, 'crumb').name('Bread');
   colors.addColor(settings, 'spread').name('Spread');
-  colors.addColor(settings, 'paper').name('Background');
   colors.add(settings, 'spin').name('Spin');
 
   const actions = {

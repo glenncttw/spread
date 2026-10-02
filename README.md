@@ -11,4 +11,4 @@ Add `?still` to the URL to stop the rotation and line wiggle.
 
 A slider panel ("Tweak the look") sits in the top right for trying halftone patterns, colors, light and outlines. "Copy settings" copies the current values so they can be made the new defaults in `src/tweaks.js`. Add `?clean` to the URL to hide the panel.
 
-The "Switch to …" button at the bottom dissolves the spread away and brings in the next flavor (`src/spreadSwitch.js`).
+The "Switch to …" button at the bottom shrinks the spread away as a solid outlined shape and grows the next flavor back in (`src/spreadSwitch.js`).

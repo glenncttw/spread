@@ -1,5 +1,6 @@
-// The "switch spread" button: the current spread dissolves away from the top
-// right, and once it is gone the next flavor dissolves in the same way. Each
+// The "switch spread" button: the current spread shrinks away toward the
+// bottom left as a solid shape, and once it is gone the next flavor grows in
+// from the top right. Each
 // switch rolls a slightly different noise pattern, direction, speed and easing
 // so it never plays out quite the same twice.
 
@@ -49,11 +50,7 @@ function roll(dissolve, variation) {
   const angle = Math.PI * 1.25 + vary(0, 0.44, variation);
   dissolve.uDissolveDir.value.set(Math.cos(angle), Math.sin(angle));
   dissolve.uDissolveSeed.value.set(between(0, 100), between(0, 100));
-  const strength = vary(0.3, 0.2, variation);
-  dissolve.uDissolveNoise.value.set(vary(2.75, 1.75, variation), strength);
-  // Start the front just before the spread's nearest edge and end it just past
-  // the farthest, so no time is spent sweeping over empty space.
-  dissolve.uDissolveRange.value.set(-0.25 - strength * 0.5, 1.25 + strength * 0.5 + 0.2);
+  dissolve.uDissolveNoise.value.set(vary(2.5, 1.2, variation), vary(0.35, 0.2, variation));
 }
 
 export function createSpreadSwitch({ dissolve, getColor, setColor, getTiming }) {
