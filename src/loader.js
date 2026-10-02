@@ -54,7 +54,7 @@ export function createLoader() {
     edge.setAttribute('d', `M${points.reverse().join(' L')}`);
   }
 
-  // `onReveal` runs as the curtain starts to lift.
+  // `onReveal` runs as the curtain lifts.
   function ready(onReveal) {
     if (finished) return;
     finished = true;
@@ -73,8 +73,10 @@ export function createLoader() {
         onUpdate: () => (fill.style.transform = `scaleX(${shown.value})`),
       })
       .to(content, { autoAlpha: 0, scale: 0.85, y: -10, duration: 0.3, ease: 'back.in(2)' }, '+=0.15')
-      .add(() => onReveal?.(), '-=0.05')
-      .to(wave, { lift: 1, duration: quick ? 0.4 : 1.3, ease: 'power3.inOut', onUpdate: drawWave }, '<');
+      .to(wave, { lift: 1, duration: quick ? 0.4 : 1.3, ease: 'power3.inOut', onUpdate: drawWave }, '-=0.05')
+      // A beat after the curtain starts moving, once the middle of the
+      // screen is opening up.
+      .add(() => onReveal?.(), quick ? '<' : '<0.35');
   }
 
   window.addEventListener('resize', () => !finished || drawWave());

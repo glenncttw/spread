@@ -21,6 +21,7 @@ import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
 import { createNextButton } from './ui.js';
 import { createLoader } from './loader.js';
+import { createStreaks } from './streaks.js';
 import { gsap } from 'gsap';
 
 const loader = createLoader();
@@ -107,27 +108,32 @@ spin.add(follow);
 follow.add(bob);
 scene.add(travel);
 
-// The entrance, played as the loading screen lifts: the toast starts further
-// back, standing upright, and comes forward while it turns twice around and
-// tips down onto its resting angle. `intro.t` runs 0..1.
+// The entrance, played as the loading screen lifts: the toast starts far
+// back, stood up at 90°, and comes forward while it turns twice around and
+// tips down onto its resting angle, with cream streaks whipping round it.
+// `intro.t` runs 0..1.
 const intro = { t: 0 };
+const streaks = createStreaks('#ffedcb');
+placement.add(streaks.group);
 function showIntro() {
   const t = intro.t;
   const away = new THREE.Vector3();
   camera.getWorldDirection(away);
-  travel.position.copy(away).multiplyScalar(6 * (1 - t) ** 2);
-  spin.rotation.set(1.35 * (1 - Math.min(t * 1.15, 1)) ** 2, Math.PI * 4 * (1 - t), 0, 'YXZ');
+  travel.position.copy(away).multiplyScalar(10 * (1 - t) ** 2);
+  const turn = Math.PI * 4 * (1 - t);
+  spin.rotation.set((Math.PI / 2) * (1 - Math.min(t * 1.15, 1)) ** 2, turn, 0, 'YXZ');
+  streaks.update(t, turn);
 }
 showIntro();
 function playIntro() {
   const quick = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  gsap.to(intro, { t: 1, duration: quick ? 0.5 : 2.2, ease: 'power2.out', onUpdate: showIntro });
+  gsap.to(intro, { t: 1, duration: quick ? 0.5 : 2.4, ease: 'power2.out', onUpdate: showIntro });
 }
 let model = null;
 const letterRolls = []; // see shuffleLetters()
 const modelCenter = new THREE.Vector3();
 
-const meshes = [];
+const meshes = [...streaks.meshes];
 new GLTFLoader().load('./assets/toast_purple.glb', (gltf) => {
   gltf.scene.traverse((child) => {
     if (!child.isMesh) return;
