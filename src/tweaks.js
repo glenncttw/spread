@@ -25,11 +25,8 @@ export const defaults = {
   secondHeight: 30,
   shadowWobble: 0.7,
   shadowWobbleSize: 2.5,
-  switchOut: 1.5,
-  switchGap: 0.25,
-  switchOutEasing: 'Out cubic',
-  switchInEasing: 'Out cubic',
   switchIn: 1.5,
+  switchInEasing: 'Out cubic',
   switchVariation: 0.28,
   outlineColor: palette.ink,
   thickness: 2,
@@ -52,7 +49,7 @@ export const defaults = {
   bgSpeed: 1,
   bgDotSize: 6,
   bgDotAngle: -12,
-  bgDotDrift: 0.8,
+  bgDotDrift: 2,
   bgDots: 0.7,
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
@@ -259,11 +256,8 @@ export function createTweakPanel(settings, onChange, overlay) {
   highlight.add(settings, 'secondHeight', 5, 85, 1).name('Second height');
 
   const switching = gui.addFolder('Spread switch');
-  switching.add(settings, 'switchOut', 0.3, 5, 0.05).name('Out duration (s)');
-  switching.add(settings, 'switchOutEasing', Object.keys(easings)).name('Out easing');
-  switching.add(settings, 'switchGap', 0, 3, 0.01).name('In delay (s)');
-  switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('In duration (s)');
-  switching.add(settings, 'switchInEasing', Object.keys(easings)).name('In easing');
+  switching.add(settings, 'switchIn', 0.3, 5, 0.05).name('Duration (s)');
+  switching.add(settings, 'switchInEasing', Object.keys(easings)).name('Easing');
   switching.add(settings, 'switchVariation', 0, 1, 0.01).name('Variation (shape & speed)');
 
   const bg = gui.addFolder('Background');
@@ -332,6 +326,6 @@ export function createTweakPanel(settings, onChange, overlay) {
   gui.add(actions, 'reset').name('Reset');
 
   gui.onChange(onChange);
-  if (window.innerWidth < 600) gui.close();
+  gui.close(); // open it from its title bar
   return gui;
 }

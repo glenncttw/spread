@@ -1,8 +1,7 @@
-// The spread picker: five dots down the left. Picking one swaps the spread
-// color with two shapes at once: the old color shrinks away toward the bottom
-// left while the new one grows in from the top right, after an optional delay.
-// Each switch rolls a slightly different noise pattern, direction and speed so
-// it never plays out quite the same twice. Hovering a dot bounces it and pops
+// The spread picker: five dots down the left. Picking one grows the new color
+// over the old one as a solid shape from the top right. Each switch rolls a
+// slightly different noise pattern, direction and speed so it never plays out
+// quite the same twice. Hovering a dot bounces it and pops
 // out its name.
 import { gsap } from 'gsap';
 import { bounce, popLabel } from './ui.js';
@@ -38,18 +37,12 @@ const between = (a, b) => a + Math.random() * (b - a);
 // `variation` (0..1) sets how far each roll strays from the middle values.
 const vary = (mid, spread, variation) => mid + between(-spread, spread) * variation;
 
-// `layer` is 0 for the old color going out, 1 for the new one coming in.
-function roll(dissolve, variation, layer) {
-  const key = layer === 0 ? ['x', 'y'] : ['z', 'w'];
-  const set = (v, a, b) => {
-    v[key[0]] = a;
-    v[key[1]] = b;
-  };
+function roll(dissolve, variation) {
   // Top right to bottom left, give or take up to 25°.
   const angle = Math.PI * 1.25 + vary(0, 0.44, variation);
-  set(dissolve.uDissolveDir.value, Math.cos(angle), Math.sin(angle));
-  set(dissolve.uDissolveSeed.value, between(0, 100), between(0, 100));
-  set(dissolve.uDissolveNoise.value, vary(2.5, 1.2, variation), vary(0.35, 0.2, variation));
+  dissolve.uDissolveDir.value.set(Math.cos(angle), Math.sin(angle));
+  dissolve.uDissolveSeed.value.set(between(0, 100), between(0, 100));
+  dissolve.uDissolveNoise.value.set(vary(2.5, 1.2, variation), vary(0.35, 0.2, variation));
 }
 
 export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor, getTiming }) {
@@ -107,37 +100,32 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     busy = true;
     buttons.forEach((b, j) => press(b, j === i));
 
-    const { outSeconds, gapSeconds, inSeconds, variation, outEasing, inEasing } = getTiming();
+    const { seconds, variation, easing } = getTiming();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const speed = reduceMotion ? 0.4 : 1;
 
-    // The old color is kept for the shape that shrinks away, and the new
-    // color goes straight onto the spread for the shape that grows in.
-    roll(dissolve, variation, 0);
-    roll(dissolve, variation, 1);
+    // The old color stays on the spread until the new shape covers it.
+    roll(dissolve, variation);
     keepOldColor();
     setColor(flavors[i].color);
 
-    const progress = { out: 0, in: 0 };
-    const show = () => dissolve.uSwitch.value.set(progress.out, progress.in, 1);
-    show();
-    gsap
-      .timeline({
-        onUpdate: show,
-        onComplete() {
-          dissolve.uSwitch.value.set(0, 0, 0);
-          busy = false;
-          sync();
-          if (queued !== null) {
-            const next = queued;
-            queued = null;
-            switchTo(next);
-          }
-        },
-      })
-      // Both start together; "In delay" holds the new color back.
-      .to(progress, { out: 1, duration: vary(outSeconds, outSeconds * 0.2, variation) * speed, ease: easings[outEasing] ?? 'power2.out' }, 0)
-      .to(progress, { in: 1, duration: vary(inSeconds, inSeconds * 0.2, variation) * speed, ease: easings[inEasing] ?? 'power2.out' }, gapSeconds * speed);
+    const progress = { value: 0 };
+    dissolve.uSwitch.value.set(0, 1);
+    gsap.to(progress, {
+      value: 1,
+      duration: vary(seconds, seconds * 0.2, variation) * (reduceMotion ? 0.4 : 1),
+      ease: easings[easing] ?? 'power2.out',
+      onUpdate: () => dissolve.uSwitch.value.set(progress.value, 1),
+      onComplete() {
+        dissolve.uSwitch.value.set(0, 0);
+        busy = false;
+        sync();
+        if (queued !== null) {
+          const next = queued;
+          queued = null;
+          switchTo(next);
+        }
+      },
+    });
   }
 
   return { switchTo, sync };

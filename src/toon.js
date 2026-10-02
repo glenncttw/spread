@@ -98,19 +98,16 @@ const halftoneGLSL = /* glsl */ `
   }
 `;
 
-// Swapping the spread color. Two shapes play at once: the old color shrinks
-// away toward the bottom left while the new one grows in from the top right
-// (after an optional delay), on top of it. Both stay solid shapes with an ink
-// line along their edges, and the outline pass sees the same cut, so the toast
-// outline follows the spread as it changes.
-// `uSwitch` is (out progress, in progress, 1 while a switch is playing).
-// Dir, seed and noise hold the out layer in .xy and the in layer in .zw.
+// Swapping the spread color: the new color grows over the old one as a solid,
+// wobbly shape from the top right, with an ink line along its edge, until it
+// covers the whole spread and settles onto the spread's own rim.
+// `uSwitch` is (progress, 1 while a switch is playing).
 export function createDissolveUniforms() {
   return {
-    uSwitch: { value: new THREE.Vector3(0, 0, 0) },
-    uDissolveDir: { value: new THREE.Vector4(-Math.SQRT1_2, -Math.SQRT1_2, -Math.SQRT1_2, -Math.SQRT1_2) },
-    uDissolveSeed: { value: new THREE.Vector4() },
-    uDissolveNoise: { value: new THREE.Vector4(2.5, 0.3, 2.5, 0.3) }, // scale, strength
+    uSwitch: { value: new THREE.Vector2(0, 0) },
+    uDissolveDir: { value: new THREE.Vector2(-Math.SQRT1_2, -Math.SQRT1_2) },
+    uDissolveSeed: { value: new THREE.Vector2() },
+    uDissolveNoise: { value: new THREE.Vector2(2.5, 0.3) }, // scale, strength
     uDissolveTime: { value: 0 },
     uOldBase: { value: new THREE.Color(palette.spread.base) },
     uOldShade: { value: new THREE.Color(palette.spread.shade) },
@@ -124,10 +121,10 @@ export function createDissolveUniforms() {
 }
 
 const dissolveGLSL = /* glsl */ `
-  uniform vec3 uSwitch;
-  uniform vec4 uDissolveDir;
-  uniform vec4 uDissolveSeed;
-  uniform vec4 uDissolveNoise;
+  uniform vec2 uSwitch;
+  uniform vec2 uDissolveDir;
+  uniform vec2 uDissolveSeed;
+  uniform vec2 uDissolveNoise;
   uniform float uDissolveTime;
   uniform vec3 uOldBase;
   uniform vec3 uOldShade;
@@ -150,52 +147,36 @@ const dissolveGLSL = /* glsl */ `
                mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y);
   }
 
-  // 1 while a shape is in charge, 0 where it hands over to the resting spread
-  // (the start of "out", the end of "in"), so nothing snaps at either end.
-  float blendOut() { return smoothstep(0.0, 0.2, uSwitch.x); }
-  float blendIn() { return 1.0 - smoothstep(0.8, 1.0, uSwitch.y); }
+  // 1 while the growing shape is in charge, easing to 0 at the end where it
+  // hands over to the resting spread, so nothing snaps.
+  float switchBlend() { return 1.0 - smoothstep(0.8, 1.0, uSwitch.x); }
 
-  // How far inside one layer's shape this point is (negative = outside).
-  float switchLayer(float progress, bool growing, vec2 screenDir, vec2 seed, vec2 nz, float blend) {
-    // Work top-down on the toast (world x/z) so the cut behaves like a cookie
-    // cutter: it slices straight down through the spread's rim instead of
-    // leaving flat walls. The screen direction (top right to bottom left) is
-    // turned into a direction across the toast for the current camera.
-    vec3 dirWorld = mat3(uToastInv) * (transpose(mat3(viewMatrix)) * vec3(screenDir, 0.0));
+  // How far inside the new color's shape this point is (negative = outside).
+  float switchMargin() {
+    // Work top-down on the toast (world x/z) so the shape behaves like a
+    // cookie cutter, slicing straight down through the spread's rim. The
+    // screen direction (top right to bottom left) is turned into a direction
+    // across the toast for the current camera.
+    vec3 dirWorld = mat3(uToastInv) * (transpose(mat3(viewMatrix)) * vec3(uDissolveDir, 0.0));
     vec2 dir = normalize(dirWorld.xz + vec2(1e-5));
     vec2 rel = (vWorldPos.xz - uCenter.xz) / uRadius;
-    vec2 anchor = (growing ? -0.6 : 0.6) * dir;
-    float d = length(rel - anchor);
-    vec2 q = rel * nz.x + seed + uDissolveTime * 0.6;
-    d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * nz.y;
+    float d = length(rel + 0.6 * dir);
+    vec2 q = rel * uDissolveNoise.x + uDissolveSeed + uDissolveTime * 0.6;
+    d += (dNoise(q) * 0.65 + dNoise(q * 2.3) * 0.35 - 0.5) * uDissolveNoise.y;
 
-    // Growing in, the blob gets big enough to cover the whole spread, so it
-    // has filled out before the hand-off to the resting shape. Shrinking
-    // out it starts smaller, so the movement begins right away. Both ends sit
-    // a little below zero: the noise can push the edge out past the center,
-    // so at zero a speck of the new color would already show (or the old
-    // one would linger) before the shape has really started or finished.
-    float maxR = (growing ? 1.75 : 1.3) + nz.y * 0.5;
-    float rGone = -0.05 - nz.y * 0.5;
-    float r = growing ? mix(rGone, maxR, progress) : mix(maxR, rGone, progress);
+    // The blob grows big enough to cover the whole spread, so it has filled
+    // out before the hand-off. It starts a little below zero: the noise can
+    // push the edge out past the center, so at zero a speck of the new color
+    // would already show before the animation has really started.
+    float maxR = 1.75 + uDissolveNoise.y * 0.5;
+    float r = mix(-0.05 - uDissolveNoise.y * 0.5, maxR, uSwitch.x);
     // Blend the blob with the spread's own rim using a smooth minimum, so
     // where the two meet the shape rounds off instead of forming a corner.
     float blob = (r - d) * uRadius;
     float k = 0.4;
     float h = clamp(0.5 + 0.5 * (vEdge - blob) / k, 0.0, 1.0);
     float shape = mix(vEdge, blob, h) - k * h * (1.0 - h);
-    return mix(vEdge, shape, blend);
-  }
-  float marginOut() {
-    return switchLayer(uSwitch.x, false, uDissolveDir.xy, uDissolveSeed.xy, uDissolveNoise.xy, blendOut());
-  }
-  float marginIn() {
-    return switchLayer(uSwitch.y, true, uDissolveDir.zw, uDissolveSeed.zw, uDissolveNoise.zw, blendIn());
-  }
-  // What's left of the spread: the old color's shape and the new one's together.
-  float dissolveMargin() {
-    if (uSwitch.z < 0.5) return 1.0;
-    return max(marginOut(), marginIn());
+    return mix(vEdge, shape, switchBlend());
   }
 `;
 
@@ -278,6 +259,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
+      varying float vUp;
       varying vec3 vViewDir;
       varying vec3 vViewPos;
       varying vec3 vWorldPos;
@@ -292,6 +274,8 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         // shape stay stuck to the toast however it's placed or turned.
         vWorldPos = (uToastInv * worldPos).xyz;
         vNormal = normalize(mat3(modelMatrix) * normal);
+        // How much the surface faces the toast's own up, whatever its angle.
+        vUp = normalize(mat3(uToastInv) * vNormal).y;
         vViewDir = cameraPosition - worldPos.xyz;
         vec4 viewPos = viewMatrix * worldPos;
         vViewPos = viewPos.xyz;
@@ -320,6 +304,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
       uniform float uShadowWobble;
       uniform float uShadowWobbleSize;
       varying vec3 vNormal;
+      varying float vUp;
       varying vec3 vViewDir;
       varying vec3 vWorldPos;
 
@@ -348,10 +333,10 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
       #endif
 
       // Glossy highlight: a small solid core with a ring of light dots around it.
-      // Only on the rounded edges of the spread: the flat top (normal pointing
-      // straight up) never shines, so it can't turn white when seen from above.
+      // Only on the rounded edges of the spread: the flat top never shines, so
+      // it can't turn white, even while the toast tumbles in at an angle.
       vec3 addShine(vec3 color, vec3 N, vec3 V, vec3 L, float amount, vec2 dotOffset) {
-        float edge = 1.0 - smoothstep(0.88, 0.96, N.y);
+        float edge = 1.0 - smoothstep(0.88, 0.96, vUp);
         float spec = pow(max(dot(N, normalize(L + V)), 0.0), uGloss) * edge * amount;
         vec3 shine = vec3(1.0, 0.97, 0.99);
         float glow = smoothstep(0.03, 0.55, spec) * 0.8 * uShine;
@@ -398,26 +383,15 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         inkDots = uDots;
         #ifdef DISSOLVE
           float cutLine = 0.0;
-          if (uSwitch.z > 0.5) {
-            float mOut = marginOut();
-            float mIn = marginIn();
-            if (max(mOut, mIn) < 0.0) discard;
-            // Ink along the cut edges, a few pixels wide whatever the zoom:
-            // around the outside of what's left, and where the new color
-            // meets the old one (drawn on the old color's side, so a shallow
-            // dip in the new shape never leaves a stray line inside it).
-            // Each line fades as its shape settles onto the rim.
-            float lineEdge = inkLine(max(mOut, mIn)) * blendIn();
-            float lineSeam = inkLine(-mIn) * blendIn();
-            float lineOut = inkLine(mOut) * blendOut();
-            if (mIn < 0.0) {
-              // Still the old color here.
+          if (uSwitch.y > 0.5) {
+            float m = switchMargin();
+            if (m < 0.0) {
+              // Still the old color here, with an ink line a few pixels wide
+              // along the new color's edge (it fades as the shape settles).
               base = uOldBase;
               shade = uOldShade;
               inkDots = uOldDots;
-              cutLine = max(lineOut, lineSeam);
-            } else {
-              cutLine = lineEdge;
+              cutLine = inkLine(-m) * switchBlend();
             }
           }
         #endif
@@ -438,7 +412,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         float holeDark = 0.0;
         #ifdef HOLES
           // Halftone dots inside each hole, heavier along its upper lip.
-          if (N.y > 0.7) {
+          if (vUp > 0.7) {
             float inHole = step(holeDistance(vWorldPos.xz), 0.0);
             float lip = inHole * step(0.0, holeDistance(vWorldPos.xz + vec2(0.025, -0.035) * uHoleSize));
             holeDark = inHole * 0.2 + lip * 0.35;
@@ -461,53 +435,36 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
 }
 
 // Normals for the outline pass (same packing as THREE.MeshNormalMaterial).
-// The spread's version hides whatever the dissolve has eaten, so its outline
-// follows the solid part of the spread.
-export function createNormalMaterial(dissolve, { holes = false, shared = null } = {}) {
-  const defines = {};
-  if (dissolve) defines.DISSOLVE = '';
-  if (holes) defines.HOLES = '';
+// The crumb's version dips the normal inside each bread hole so the outline
+// pass inks the holes.
+export function createNormalMaterial({ holes = false, shared = null } = {}) {
   return new THREE.ShaderMaterial({
-    defines,
-    uniforms: { ...dissolve, ...(holes ? { ...holeUniforms, uToastInv: shared.uToastInv } : {}) },
+    defines: holes ? { HOLES: '' } : {},
+    uniforms: holes ? { ...holeUniforms, uToastInv: shared.uToastInv } : {},
     vertexShader: /* glsl */ `
       varying vec3 vViewNormal;
-      varying vec3 vWorldPos;
-      varying float vUp;
-      #if defined(DISSOLVE) || defined(HOLES)
+      #ifdef HOLES
         uniform mat4 uToastInv;
-      #endif
-      #ifdef DISSOLVE
-        attribute float edgeDist;
-        varying float vEdge;
+        varying vec3 vWorldPos;
+        varying float vUp;
       #endif
       void main() {
         vViewNormal = normalize(normalMatrix * normal);
-        vUp = normalize(mat3(modelMatrix) * normal).y;
-        #if defined(DISSOLVE) || defined(HOLES)
+        #ifdef HOLES
           vWorldPos = (uToastInv * modelMatrix * vec4(position, 1.0)).xyz;
+          vUp = normalize(mat3(uToastInv) * mat3(modelMatrix) * normal).y;
         #endif
-        vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
-        #ifdef DISSOLVE
-          vEdge = edgeDist;
-        #endif
-        gl_Position = projectionMatrix * viewPos;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
       varying vec3 vViewNormal;
-      varying vec3 vWorldPos;
-      varying float vUp;
-      #ifdef DISSOLVE
-        ${dissolveGLSL}
-      #endif
       #ifdef HOLES
+        varying vec3 vWorldPos;
+        varying float vUp;
         ${holesGLSL}
       #endif
       void main() {
-        #ifdef DISSOLVE
-          if (dissolveMargin() < 0.0) discard;
-        #endif
         vec3 n = normalize(vViewNormal);
         #ifdef HOLES
           // Inside a hole the surface "dips": tipping the normal hard makes
@@ -548,7 +505,7 @@ export function createOutlineMaterial() {
       uBgFlow: { value: 0.35 }, // how much the noise bends the gradient
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
-      uBgDotDrift: { value: 0.8 }, // dot rows per second, along the screen's tilt
+      uBgDotDrift: { value: 2 }, // dot rows per second, along the screen's tilt
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },

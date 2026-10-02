@@ -64,8 +64,7 @@ const materials = {
 };
 const plainNormals = createNormalMaterial();
 const normalMaterials = {
-  'Purple Spread': createNormalMaterial(dissolve),
-  'Purple Crumb': createNormalMaterial(null, { holes: true, shared }),
+  'Purple Crumb': createNormalMaterial({ holes: true, shared }),
 };
 
 // For each vertex of the spread: how far it is (across the toast) from the
@@ -327,12 +326,9 @@ const spreadSwitch = createSpreadSwitch({
   dissolve,
   getColor: () => settings.spread,
   getTiming: () => ({
-    outSeconds: settings.switchOut,
-    gapSeconds: settings.switchGap,
-    inSeconds: settings.switchIn,
+    seconds: settings.switchIn,
     variation: settings.switchVariation,
-    outEasing: settings.switchOutEasing,
-    inEasing: settings.switchInEasing,
+    easing: settings.switchInEasing,
   }),
   // Hold on to the current spread colors for the shape that shrinks away.
   keepOldColor: () => {
