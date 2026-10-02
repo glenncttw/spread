@@ -9,35 +9,30 @@ import { bounce, popLabel } from './ui.js';
 
 // x/y are the dot centers on the 1440px-wide mockup.
 export const flavors = [
-  { name: 'Love', color: '#f2434b', x: 220, y: 279 }, // strawberry red
-  { name: 'Joy', color: '#ffd23f', x: 235, y: 339 }, // yellow
-  { name: 'Calm', color: '#8ccdf5', x: 250.5, y: 399 }, // soft sky blue
-  { name: 'Growth', color: '#a6d96a', x: 235, y: 459 }, // pistachio green
-  { name: 'Friendship', color: '#e4447f', x: 219.5, y: 519 }, // raspberry pink
+  { name: 'Love', color: '#dd3336', x: 220, y: 279 },
+  { name: 'Joy', color: '#fabe4c', x: 235, y: 339 },
+  { name: 'Calm', color: '#33c3dd', x: 250.5, y: 399 },
+  { name: 'Growth', color: '#9cdd33', x: 235, y: 459 },
+  { name: 'Friendship', color: '#ff71c3', x: 219.5, y: 519 },
 ];
 
-// Easing curves to pick from in the panel ("Spread switch").
+// Easing curves to pick from in the panel ("Spread switch"), as GSAP eases.
 export const easings = {
-  Linear: (t) => t,
-  'In sine': (t) => 1 - Math.cos((t * Math.PI) / 2),
-  'In cubic': (t) => t * t * t,
-  'In back': (t) => 2.70158 * t * t * t - 1.70158 * t * t,
-  'Out sine': (t) => Math.sin((t * Math.PI) / 2),
-  'Out cubic': (t) => 1 - (1 - t) ** 3,
-  'Out quart': (t) => 1 - (1 - t) ** 4,
-  'Out back': (t) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2,
-  'Out elastic': (t) => (t === 0 || t === 1 ? t : 2 ** (-10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1),
-  'In-out sine': (t) => -(Math.cos(Math.PI * t) - 1) / 2,
-  'In-out cubic': (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
-  'In-out quint': (t) => (t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2),
-  'In-out expo': (t) => (t === 0 || t === 1 ? t : t < 0.5 ? 2 ** (20 * t - 10) / 2 : (2 - 2 ** (-20 * t + 10)) / 2),
+  Linear: 'none',
+  'In sine': 'sine.in',
+  'In cubic': 'power2.in',
+  'In back': 'back.in',
+  'Out sine': 'sine.out',
+  'Out cubic': 'power2.out',
+  'Out quart': 'power3.out',
+  'Out back': 'back.out',
+  'Out elastic': 'elastic.out',
+  'In-out sine': 'sine.inOut',
+  'In-out cubic': 'power2.inOut',
+  'In-out quint': 'power4.inOut',
+  'In-out expo': 'expo.inOut',
 };
-// "Random" picks one of these each time.
-const outEasings = ['In-out cubic', 'In-out quint', 'In-out sine'];
-const inEasings = ['Out cubic', 'Out back', 'Out quart'];
-export const easingChoices = ['Random', ...Object.keys(easings)];
 
-const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const between = (a, b) => a + Math.random() * (b - a);
 
 // `variation` (0..1) sets how far each roll strays from the middle values.
@@ -115,8 +110,6 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     const { outSeconds, gapSeconds, inSeconds, variation, outEasing, inEasing } = getTiming();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const speed = reduceMotion ? 0.4 : 1;
-    const outEase = outEasing === 'Random' ? pick(outEasings) : outEasing;
-    const inEase = inEasing === 'Random' ? pick(inEasings) : inEasing;
 
     // The old color is kept for the shape that shrinks away, and the new
     // color goes straight onto the spread for the shape that grows in.
@@ -143,15 +136,9 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
         },
       })
       // Both start together; "In delay" holds the new color back.
-      .to(progress, { out: 1, duration: vary(outSeconds, outSeconds * 0.2, variation) * speed, ease: easings[outEase] }, 0)
-      .to(progress, { in: 1, duration: vary(inSeconds, inSeconds * 0.2, variation) * speed, ease: easings[inEase] }, gapSeconds * speed);
+      .to(progress, { out: 1, duration: vary(outSeconds, outSeconds * 0.2, variation) * speed, ease: easings[outEasing] ?? 'power2.out' }, 0)
+      .to(progress, { in: 1, duration: vary(inSeconds, inSeconds * 0.2, variation) * speed, ease: easings[inEasing] ?? 'power2.out' }, gapSeconds * speed);
   }
 
-  // Next flavor in the list, for the console helper.
-  function switchSpread() {
-    const i = flavors.findIndex((f) => f.color === getColor().toLowerCase());
-    return switchTo((i + 1) % flavors.length);
-  }
-
-  return { switchTo, switchSpread, sync };
+  return { switchTo, sync };
 }

@@ -171,11 +171,13 @@ const dissolveGLSL = /* glsl */ `
 
     // Growing in, the blob gets big enough to cover the whole spread, so it
     // has filled out before the hand-off to the resting shape. Shrinking
-    // out it starts smaller, so the movement begins right away, and it ends
-    // a little below zero so the bumpiest edges are gone by the last frame.
+    // out it starts smaller, so the movement begins right away. Both ends sit
+    // a little below zero: the noise can push the edge out past the center,
+    // so at zero a speck of the new color would already show (or the old
+    // one would linger) before the shape has really started or finished.
     float maxR = (growing ? 1.75 : 1.3) + nz.y * 0.5;
-    float rEnd = -0.05 - nz.y * 0.5;
-    float r = growing ? mix(0.0, maxR, progress) : mix(maxR, rEnd, progress);
+    float rGone = -0.05 - nz.y * 0.5;
+    float r = growing ? mix(rGone, maxR, progress) : mix(maxR, rGone, progress);
     // Blend the blob with the spread's own rim using a smooth minimum, so
     // where the two meet the shape rounds off instead of forming a corner.
     float blob = (r - d) * uRadius;
@@ -546,6 +548,7 @@ export function createOutlineMaterial() {
       uBgFlow: { value: 0.35 }, // how much the noise bends the gradient
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
+      uBgDotDrift: { value: 0.3 }, // dot rows per second, along the screen's tilt
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
@@ -596,6 +599,7 @@ export function createOutlineMaterial() {
       uniform float uBgFlow;
       uniform float uBgDotSize;
       uniform float uBgDotAngle;
+      uniform float uBgDotDrift;
       uniform float uBgDots;
       uniform float uBgNoiseOpacity;
       uniform float uBgNoiseScale;
@@ -728,6 +732,9 @@ export function createOutlineMaterial() {
         // printed in a deeper, richer version of the color underneath.
         float c = cos(uBgDotAngle), s = sin(uBgDotAngle);
         vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
+        // The screen slides slowly upward along its own tilt, so the dots
+        // drift diagonally while their sizes keep following the colors below.
+        grid.y -= uBgTime * uBgDotDrift;
         float d = length(fract(grid) - 0.5);
         float luma = dot(color, vec3(0.299, 0.587, 0.114));
         float r = sqrt(clamp((1.0 - luma) * mix(1.2, 0.6, uBgSoft) + mix(0.12, 0.3, uBgSoft), 0.0, 1.0)) * 0.55;

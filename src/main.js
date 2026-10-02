@@ -395,5 +395,4 @@ window.toast = {
   outline,
   shuffleLetters,
   groups: { placement, follow, bob },
-  switchSpread: () => spreadSwitch.switchSpread(),
 };
