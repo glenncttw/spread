@@ -187,7 +187,7 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
       ...dissolve,
       uHoleColor: { value: new THREE.Color(palette.crumb.hole) },
       uHoleShadow: { value: new THREE.Color(palette.crumb.holeShadow) },
-      uHoleAmount: { value: 0.45 }, // share of spots that get a hole
+      uHoleAmount: { value: 0.3 }, // how many pores open up (0..1)
       uHoleSize: { value: 1 },
       uBase: { value: new THREE.Color(base) },
       uShade: { value: new THREE.Color(shade) },
@@ -267,43 +267,48 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         uniform float uHoleAmount;
         uniform float uHoleSize;
 
-        vec4 holeHash(vec2 c) {
-          return fract(sin(vec4(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)),
-                                dot(c, vec2(419.2, 371.9)), dot(c, vec2(23.7, 97.1)))) * 43758.5453);
+        vec2 holeHash2(vec2 c) {
+          return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
         }
 
-        // Bread holes, like a flat illustration: a few scattered ovals, some
-        // with a little one beside them. Returns x = inside a hole (0..1) and
-        // y = inside its shaded upper-left lip.
-        vec2 one(vec2 local, vec2 r, float aa) {
-          float d = length(local / r) - 1.0;
-          float lip = length((local - vec2(-0.22, 0.28) * r) / (r * 0.95)) - 1.0;
-          float inside = 1.0 - smoothstep(-aa, aa, d * min(r.x, r.y));
-          float shade = inside * smoothstep(-aa, aa, lip * min(r.x, r.y));
-          return vec2(inside, shade);
-        }
-        vec2 breadHoles(vec2 p) {
-          const float cellSize = 0.32;
-          vec2 cell = floor(p / cellSize);
-          float aa = fwidth(p.x) + fwidth(p.y);
-          vec2 result = vec2(0.0);
+        // Generative crumb: cellular (Worley) noise gives every pore its own
+        // spot, a warp from smooth noise bends the cells so no two holes are
+        // the same shape, low-frequency noise clusters them, and a finer noise
+        // roughens their edges. Returns 0..1 for "inside a hole".
+        float poreMask(vec2 p) {
+          vec2 q = p * 7.0 / uHoleSize;
+          q += (vec2(noise3(vec3(p * 2.2, 1.7)), noise3(vec3(p * 2.2, 8.3))) - 0.5) * 1.6;
+          q *= vec2(1.0, 1.35); // slightly stretched, like risen dough
+          vec2 cell = floor(q);
+          vec2 f = fract(q);
+          float d = 8.0;
+          float pick = 0.0;
           for (int y = -1; y <= 1; y++) {
             for (int x = -1; x <= 1; x++) {
-              vec2 c = cell + vec2(x, y);
-              vec4 h = holeHash(c);
-              if (h.x > uHoleAmount) continue;
-              vec2 center = (c + 0.2 + 0.6 * h.yz) * cellSize;
-              float angle = h.w * 6.2832;
-              mat2 turn = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-              vec2 r = vec2(1.45, 1.0) * (0.03 + 0.03 * h.y) * uHoleSize;
-              vec2 local = turn * (p - center);
-              vec2 a = one(local, r, aa);
-              // Sometimes a small companion hole nearby.
-              if (h.z > 0.45) a = max(a, one(local - vec2(r.x * 2.1, r.y * 0.4), r * 0.45, aa));
-              result = max(result, a);
+              vec2 o = vec2(x, y);
+              vec2 h = holeHash2(cell + o);
+              float dist = length(o + h - f);
+              if (dist < d) {
+                d = dist;
+                pick = fract(h.x * 13.7 + h.y * 7.1);
+              }
             }
           }
-          return result;
+          // Rough, slightly lumpy edges.
+          d += (noise3(vec3(q * 2.3, 3.1)) - 0.5) * 0.14;
+          // Only some cells open into a hole, more of them in denser patches.
+          float cluster = noise3(vec3(p * 1.4, 4.2));
+          float open = step(1.0 - uHoleAmount, pick * 0.6 + cluster * 0.55);
+          float r = mix(0.12, 0.34, pick * pick) * open;
+          float aa = fwidth(d) * 0.8;
+          return 1.0 - smoothstep(r - aa, r + aa, d);
+        }
+        // x = inside a hole, y = its shaded lip (the part of the hole not
+        // covered by a copy nudged toward the light, like a little dip).
+        vec2 breadHoles(vec2 p) {
+          float hole = poreMask(p);
+          float inner = poreMask(p + vec2(0.012, -0.016) * uHoleSize);
+          return vec2(hole, hole * (1.0 - inner));
         }
       #endif
 

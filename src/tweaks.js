@@ -37,7 +37,7 @@ export const defaults = {
   crust: palette.crust.base,
   crumb: palette.crumb.base,
   spread: palette.spread.base,
-  holeAmount: 0.45,
+  holeAmount: 0.3,
   holeSize: 1,
   bgTop: palette.background[0],
   bgMiddle: palette.background[1],

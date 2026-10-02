@@ -4,7 +4,7 @@ A hand-drawn looking toast, rendered with Three.js.
 
 - `index.html` is the page. Open it through any static web server (for example `npx serve .`) or GitHub Pages.
 - `src/toon.js` holds the look: cel shading with halftone-dot shadows, and a post-processing pass that draws wobbly ink outlines from depth and normal edges (after Maxime Heckel's "Moebius" style post-processing).
-- The bread shows a few scattered flat-illustration holes on its top ("Bread holes" sliders under Colors).
+- The bread top has generative crumb holes (warped cellular noise, clustered and rough-edged; no image) ("Bread holes" sliders under Colors).
 - `assets/toast_purple.glb` is the model (decompressed from the original Draco file so no decoder is needed).
 - `vendor/three` is a pinned copy of Three.js r186, so the page has no build step.
 
