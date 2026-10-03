@@ -80,12 +80,10 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
   });
 
   // The picked dot sits pressed into the page.
+  // The picked dot isn't drawn differently; only screen readers hear it.
   function press(button, pressed) {
-    if (button.getAttribute('aria-pressed') === String(pressed)) return;
     button.setAttribute('aria-pressed', String(pressed));
-    gsap.to(button, { '--press': pressed ? 1 : 0, duration: 0.25, ease: 'power2.out' });
   }
-  buttons.forEach((b) => gsap.set(b, { '--press': 0 }));
 
   function sync() {
     const current = getColor().toLowerCase();

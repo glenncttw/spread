@@ -87,11 +87,10 @@
       /* The button is a fixed-size hit area; the dot inside it is what you
          see. --px is one design pixel: the 1440px mockup's on big screens, a
          real pixel on phones. --dot is the dot's size. GSAP (src/ui.js)
-         tweens --s (hover size) and --press (pushed in when picked). */
+         tweens --s (hover size) and --in (its entrance). */
       --px: var(--u);
       --dot: calc(50 * var(--u));
       --s: 1;
-      --press: 0;
       position: absolute;
       left: calc(var(--x) * var(--u));
       top: calc(var(--y) * var(--u));
@@ -118,15 +117,14 @@
       box-sizing: border-box;
       width: max(calc(var(--dot) * var(--s)), 22px);
       height: max(calc(var(--dot) * var(--s)), 22px);
-      transform: translate(-50%, -50%) translate(calc(var(--press) * 2.4 * var(--px)), calc(var(--press) * 2.4 * var(--px)))
-        scale(var(--in, 1));
+      transform: translate(-50%, -50%) scale(var(--in, 1));
       border: calc(2.5 * var(--px)) solid var(--ink);
       border-radius: 50%;
       background: var(--color);
       /* Five stacked hard shadows (Glenn's Figma offsets at 1440px: 0.68,
          1.35, 2, 2.71 and 3.39) blend into one extruded edge. --d scales the
-         whole stack, and it gets shallow when the dot is pressed in. */
-      --d: calc((1 - 0.7 * var(--press)) * var(--px));
+         whole stack. */
+      --d: var(--px);
       box-shadow:
         calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
         calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
@@ -236,6 +234,9 @@
       white-space: nowrap;
     }
 
+    .flavors--away .flavor { pointer-events: none; }
+    .flavors--away .flavor-label { opacity: 0; }
+
     /* BACK: a cream round button in the bottom left corner, outlined and
        stacked like the color dots, with an orange arrow. It only shows on the
        message step; --in is its pop-in (src/main.js), --s its hover bounce. */
@@ -273,10 +274,10 @@
     .back__arrow {
       display: block;
       font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
-      font-size: max(calc(38 * var(--u)), 23px);
+      font-size: max(calc(32 * var(--u)), 20px);
       line-height: 1;
       color: #ff9c41;
-      transform: translate(-6%, -4%);
+      transform: translate(-6%, -4%) rotate(-8deg);
     }
 
     /* Phones: the titles go a bit bigger and the dots line up in a row along

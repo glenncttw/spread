@@ -427,6 +427,7 @@ function goTo(name) {
   const { word, label, nudge } = steps[name];
   if (name === 'message') back.show(0.3);
   else back.hide();
+  showDots(name === 'spread');
   // If the user clicks again mid-swap, only the latest swap goes through.
   const swap = ++swaps;
   popOut(titleBig).then(() => {
@@ -437,6 +438,15 @@ function goTo(name) {
     shuffleLetters();
     popIn(titleBig);
   });
+}
+// The color dots only belong to the spread step: they shrink away bottom to
+// top on the way to the message, and pop back in top to bottom on return.
+function showDots(on) {
+  const quick = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelector('.flavors').classList.toggle('flavors--away', !on);
+  gsap.to('.flavor__dot', on
+    ? { '--in': 1, duration: quick ? 0.2 : 0.7, ease: quick ? 'power2.out' : 'back.out(3.2)', stagger: quick ? 0 : 0.07, delay: 0.25, overwrite: true }
+    : { '--in': 0, duration: quick ? 0.15 : 0.3, ease: 'back.in(2.5)', stagger: { each: quick ? 0 : 0.05, from: 'end' }, overwrite: true });
 }
 const next = createNextButton({ onClick: () => goTo('message') });
 const back = createBackButton({ onClick: () => goTo('spread') });
