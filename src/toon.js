@@ -512,8 +512,6 @@ export function createOutlineMaterial() {
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
       uBgSoft: { value: 0.6 }, // 0 = full strength, 1 = pale and gentle
-      uBgLiquid: { value: 1 }, // how strongly the noise swirls
-      uBgDrag: { value: 1 }, // how much the cursor pushes the noise
       // Rounded frame around the scene, in CSS pixels:
       // x = border width, y = corner radius, z = outline width.
       uFrame: { value: new THREE.Vector3(20, 32, 2) },
@@ -697,15 +695,12 @@ export function createOutlineMaterial() {
 // The background's colors: the gradient plus a liquid simplex-noise layer.
 // The colors are soft, so this pass runs at a fraction of the screen's
 // resolution and the outline pass prints the sharp halftone dots over it.
-// The noise is carried along a slowly turning, swirling flow (the curl of
-// another noise field, so it moves like a liquid without bunching up), and
-// the cursor drags it along as it passes. The gradient and the halftone
-// screen are not moved by the liquid.
-export const FLUID_SPLATS = 10;
+// The noise layer is bent by the liquid simulation in fluid.js (its offsets
+// say where each bit of liquid came from), so the colors swirl and smear like
+// ink in water. The gradient and the halftone screen are not moved by it.
 export function createBackgroundMaterial(outlineUniforms) {
   const u = outlineUniforms;
   return new THREE.ShaderMaterial({
-    defines: { SPLATS: FLUID_SPLATS },
     uniforms: {
       uBgTop: u.uBgTop,
       uBgMid: u.uBgMid,
@@ -717,11 +712,7 @@ export function createBackgroundMaterial(outlineUniforms) {
       uBgSoft: u.uBgSoft,
       uFrame: u.uFrame,
       uView: { value: new THREE.Vector2(1, 1) }, // CSS pixels
-      uBgLiquid: u.uBgLiquid,
-      uBgDrag: u.uBgDrag,
-      // The cursor's recent trail: position (CSS px from the bottom left) and
-      // push (CSS px per second, fading out).
-      uSplats: { value: Array.from({ length: FLUID_SPLATS }, () => new THREE.Vector4()) },
+      tFluid: { value: null },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -741,9 +732,7 @@ export function createBackgroundMaterial(outlineUniforms) {
       uniform float uBgSoft;
       uniform vec3 uFrame;
       uniform vec2 uView;
-      uniform float uBgLiquid;
-      uniform float uBgDrag;
-      uniform vec4 uSplats[SPLATS];
+      uniform sampler2D tFluid;
       varying vec2 vUv;
 
       // 3D simplex noise (Ashima Arts / Stefan Gustavson, MIT licence).
@@ -818,16 +807,6 @@ export function createBackgroundMaterial(outlineUniforms) {
         return mix(c3, c4, smoothstep(3.0, 4.0, x));
       }
 
-      // The flow: the curl of a noise field turns its hills and valleys into
-      // swirls that go round them, so the liquid never piles up anywhere.
-      vec2 flow(vec2 p, float t) {
-        const float e = 0.06;
-        float n = snoise(vec3(p, t));
-        float nx = snoise(vec3(p + vec2(e, 0.0), t));
-        float ny = snoise(vec3(p + vec2(0.0, e), t));
-        return vec2(ny - n, n - nx) / e;
-      }
-
       void main() {
         vec2 cssPx = vUv * uView;
         vec2 inner = max(uView - 2.0 * uFrame.x, vec2(1.0));
@@ -841,17 +820,9 @@ export function createBackgroundMaterial(outlineUniforms) {
           ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
           : mix(uBgBottom, uBgMid, smoothstep(0.0, 0.5, g));
 
-        // Carry the noise a few steps along the swirling flow.
-        vec2 q = p * uBgNoiseScale;
-        for (int i = 0; i < 3; i++) q -= flow(q * 0.55 + 3.1, t * 1.7) * 0.035 * uBgLiquid;
-        // The cursor's trail pushes the liquid the way it moved, strongest in
-        // the middle of each splat, with a little twist so it curls.
-        for (int i = 0; i < SPLATS; i++) {
-          vec2 d = cssPx - uSplats[i].xy;
-          float w = exp(-dot(d, d) / (150.0 * 150.0));
-          vec2 push = uSplats[i].zw * w;
-          q -= (push + vec2(-push.y, push.x) * 0.35) * (0.00018 * uBgDrag * uBgNoiseScale);
-        }
+        // Look the noise up where this bit of liquid came from. The offsets
+        // are in screen heights; p is in heights of the framed area.
+        vec2 q = (p + texture2D(tFluid, vUv).xy * uView.y / inner.y) * uBgNoiseScale;
 
         float n = snoise(vec3(q + vec2(0.0, t * 0.6), t)) * 0.5 + 0.5;
         n = mix(n, snoise(vec3(q * 1.9 + 7.3, t * 1.4)) * 0.5 + 0.5, 0.3);

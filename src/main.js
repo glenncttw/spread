@@ -23,7 +23,7 @@ import { createOverlay } from './overlay.js';
 import { createNextButton } from './ui.js';
 import { createLoader } from './loader.js';
 import { createStreaks } from './streaks.js';
-import { createFluidTrail } from './fluid.js';
+import { createFluid } from './fluid.js';
 import { gsap } from 'gsap';
 
 const loader = createLoader();
@@ -329,7 +329,8 @@ const bgTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, 
 const bgMaterial = createBackgroundMaterial(outline.uniforms);
 const bgScene = fullScreen(bgMaterial);
 outline.uniforms.tBg.value = bgTarget.texture;
-const fluid = createFluidTrail(bgMaterial.uniforms.uSplats.value);
+const fluid = createFluid(renderer);
+bgMaterial.uniforms.tFluid.value = fluid.texture;
 
 function resize() {
   const w = window.innerWidth;
@@ -346,6 +347,7 @@ function resize() {
   outline.uniforms.uPixelRatio.value = dpr;
   bgTarget.setSize(Math.max(1, Math.round(w * BG_SCALE)), Math.max(1, Math.round(h * BG_SCALE)));
   bgMaterial.uniforms.uView.value.set(w, h);
+  fluid.resize(w, h);
   next.layout(w, h);
   applyAll();
 }
@@ -459,7 +461,6 @@ renderer.setAnimationLoop((now) => {
   followCursor(dt, now);
   floatToast(now / 1000);
   updateMagnet(dt);
-  fluid.update(dt, pointerPx.x, window.innerHeight - pointerPx.y, pointerPx.inside && !still);
   keepFrameRate(dt);
   placeNext();
   scene.updateMatrixWorld();
@@ -475,6 +476,16 @@ renderer.setAnimationLoop((now) => {
     wobbles.forEach((w) => w.setAttribute('seed', String(1 + (boilFrame % 7))));
   }
 
+  if (!still) {
+    fluid.step(dt, {
+      x: pointerPx.x / window.innerWidth,
+      y: 1 - pointerPx.y / window.innerHeight,
+      inside: pointerPx.inside,
+      stir: settings.bgLiquid,
+      drag: settings.bgDrag,
+    });
+  }
+  bgMaterial.uniforms.tFluid.value = fluid.texture; // swaps every frame
   renderer.setRenderTarget(bgTarget);
   renderer.render(bgScene, quadCamera);
 

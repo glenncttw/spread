@@ -121,8 +121,6 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgNoiseOpacity.value = s.bgNoise;
   u.uBgNoiseScale.value = s.bgNoiseScale;
   u.uBgSoft.value = s.bgSoft;
-  u.uBgLiquid.value = s.bgLiquid;
-  u.uBgDrag.value = s.bgDrag;
   u.uFrameColor.value.set(s.frameColor);
   u.uFrameInk.value.set(s.frameInk);
   const f = frameSize(s);
