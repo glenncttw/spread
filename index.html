@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spread The Love</title>
+  <meta name="theme-color" content="#ffedcb" />
+  <link rel="preload" href="./assets/fonts/BDKarlo.woff2" as="font" type="font/woff2" crossorigin />
+  <style>
+    /* Everything is sized for a 1440px-wide screen and scales with the
+       window width from there (16px text at 1440 = 1.111vw). The frame's
+       border and corner sizes are set from main.js as --frame-border and
+       --frame-radius, since the canvas draws the frame itself. */
+    :root {
+      --frame-border: 20px;
+      --frame-radius: 32px;
+      --frame-color: #ffedcb;
+      --ink: #211d1e;
+      font-size: clamp(14px, 1.111vw, 24px);
+    }
+    html, body { margin: 0; height: 100%; background: var(--frame-color); overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    @font-face {
+      font-family: "BD Karlo";
+      src: url("./assets/fonts/BDKarlo.woff2") format("woff2");
+      font-display: block;
+    }
+    /* --u is one pixel of the 1440px-wide design, so everything below can be
+       measured straight off the mockup and still scales with the window. */
+    :root { --u: calc(100vw / 1440); }
+
+    .title {
+      position: fixed;
+      inset: 0 0 auto 0;
+      margin: 0;
+      pointer-events: none;
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-weight: normal;
+      color: var(--frame-color);
+      text-transform: uppercase;
+      line-height: 1;
+    }
+    .title > span { position: absolute; left: 0; right: 0; text-align: center; white-space: nowrap; }
+    /* Letters are separate so each can lean a little (set from main.js).
+       The outline and shadow are drawn around all of them together by the
+       SVG filters below, so overlapping letters merge into one shape. */
+    /* --ty, --sx, --sy and --tr are the jelly entrance (src/title.js). */
+    .title > span > span {
+      display: inline-block;
+      transform-origin: 50% 90%;
+      /* --kx nudges a single letter sideways (kerning, in em). */
+      transform: translate(calc(var(--kx, 0) * 1em), calc(var(--ty, 0) * 1em)) rotate(calc((var(--lean, 0) + var(--tr, 0)) * 1deg))
+        scale(var(--sx, 1), var(--sy, 1));
+    }
+    /* "Message" leans the opposite way to "Spread". */
+    .title--message .title__big { --title-big-rotate: -3.5; --title-big-turn: 5; --title-big-x: 4; }
+    .title__small {
+      top: calc(var(--title-small-top, 83) * var(--u));
+      font-size: calc(var(--title-small-size, 38.5) * var(--u));
+      letter-spacing: 0.01em;
+      filter: url(#title-small-ink);
+      transform: translateX(calc(var(--title-small-x, 0) * var(--u) + 0.005em)) rotate(calc(var(--title-small-rotate, 0) * 1deg));
+    }
+    .title__big {
+      top: calc(var(--title-big-top, 113) * var(--u));
+      font-size: calc(var(--title-big-size, 147) * var(--u));
+      letter-spacing: -0.04em;
+      filter: url(#title-big-ink);
+      transform-origin: 50% 50%;
+      /* -0.02em re-centers the letters after the negative letter spacing. */
+      transform: translateX(calc(var(--title-big-x, -4) * var(--u) - 0.02em))
+        perspective(calc(900 * var(--u)))
+        rotateY(calc(var(--title-big-turn, -5) * 1deg))
+        rotate(calc(var(--title-big-rotate, 3.5) * 1deg));
+    }
+
+    /* Spread picker: five ink-outlined dots on a gentle curve. */
+    .flavors {
+      position: fixed;
+      inset: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      pointer-events: none;
+    }
+    .flavor {
+      /* The button is a fixed-size hit area; the dot inside it is what you
+         see. --px is one design pixel: the 1440px mockup's on big screens, a
+         real pixel on phones. --dot is the dot's size. GSAP (src/ui.js)
+         tweens --s (hover size) and --in (its entrance). */
+      --px: var(--u);
+      --dot: calc(50 * var(--u));
+      --s: 1;
+      position: absolute;
+      left: calc(var(--x) * var(--u));
+      top: calc(var(--y) * var(--u));
+      width: calc(var(--dot) * 1.25);
+      height: calc(var(--dot) * 1.25);
+      min-width: 28px;
+      min-height: 28px;
+      transform: translate(-50%, -50%);
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      cursor: pointer;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .flavor:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+    /* The dot grows by changing its size rather than scaling, so its ink
+       outline and shadow keep the same thickness. */
+    .flavor__dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      box-sizing: border-box;
+      width: max(calc(var(--dot) * var(--s)), 22px);
+      height: max(calc(var(--dot) * var(--s)), 22px);
+      transform: translate(-50%, -50%) scale(var(--in, 1));
+      border: calc(2.5 * var(--px)) solid var(--ink);
+      border-radius: 50%;
+      background: var(--color);
+      /* Five stacked hard shadows (Glenn's Figma offsets at 1440px: 0.68,
+         1.35, 2, 2.71 and 3.39) blend into one extruded edge. --d scales the
+         whole stack. */
+      --d: var(--px);
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+    }
+
+    /* Name label that pops out next to a hovered dot: a cream speech bubble
+       with the same ink outline and stacked shadow as the dots. Only the
+       bubble gets the wobbly ink; the word stays crisp. */
+    .flavor-label {
+      --px: var(--u);
+      position: absolute;
+      left: calc((var(--x) + 42) * var(--u));
+      top: calc(var(--y) * var(--u));
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .flavor-label__pill {
+      position: relative;
+      display: flex;
+      align-items: center;
+      height: calc(28 * var(--px));
+      padding: 0 calc(13.5 * var(--px));
+      color: var(--ink);
+      font: 800 calc(15 * var(--px)) / 1 Inter, Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+      letter-spacing: -0.01em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      visibility: hidden;
+    }
+    .flavor-label__text {
+      position: relative;
+      /* Center on the capital letters, not the line box (which leaves room
+         for descenders and so sits uppercase text too high). */
+      text-box: trim-both cap alphabetic;
+    }
+    @supports not (text-box: trim-both cap alphabetic) {
+      .flavor-label__text { padding-top: 0.14em; }
+    }
+    .flavor-label__bubble {
+      --d: calc(1.3 * var(--px));
+      position: absolute;
+      inset: 0;
+      border: calc(2.5 * var(--px)) solid var(--ink);
+      border-radius: calc(9 * var(--px));
+      background: var(--frame-color);
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+    }
+    /* The bubble's point: a turned square with ink on two sides, covering
+       the bubble's own border where it joins. */
+    .flavor-label__bubble::before {
+      content: "";
+      position: absolute;
+      left: calc(-6.5 * var(--px));
+      top: 50%;
+      box-sizing: border-box;
+      width: calc(10 * var(--px));
+      height: calc(10 * var(--px));
+      margin-top: calc(-5 * var(--px));
+      background: var(--frame-color);
+      border-left: calc(2.5 * var(--px)) solid var(--ink);
+      border-bottom: calc(2.5 * var(--px)) solid var(--ink);
+      transform: rotate(45deg);
+    }
+
+    /* NEXT: the pink circle is drawn by the canvas (see uNext in toon.js);
+       this is its clickable area and the word on it, in the title lettering.
+       The ink filter sits on a wrapper so it's drawn after the word grows,
+       keeping the outline the same thickness. */
+    .next {
+      --s: 1;
+      position: fixed;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .next:focus-visible { outline: 3px solid var(--ink); outline-offset: -12px; }
+    .next__ink {
+      position: absolute;
+      inset: 0;
+      filter: url(#title-small-ink);
+    }
+    .next__word {
+      position: absolute;
+      /* From the circle's center, as in the mockup. */
+      left: calc(50% - 24 * var(--u));
+      top: calc(50% - 27 * var(--u));
+      transform: translate(-50%, -50%) rotate(-9deg) scale(calc(var(--s) * var(--in, 1)));
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: calc(40 * var(--u));
+      line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      color: var(--frame-color);
+      white-space: nowrap;
+    }
+
+    .flavors--away .flavor { pointer-events: none; }
+    .flavors--away .flavor-label { opacity: 0; }
+
+    /* BACK: a cream round button in the bottom left corner, outlined and
+       stacked like the color dots, with an orange arrow. It only shows on the
+       message step; --in is its pop-in (src/main.js), --s its hover bounce. */
+    .back {
+      --s: 1;
+      --in: 0;
+      --d: var(--u);
+      position: fixed;
+      left: calc(95.5 * var(--u));
+      bottom: calc(96 * var(--u));
+      width: max(calc(66 * var(--u)), 40px);
+      height: max(calc(66 * var(--u)), 40px);
+      transform: translate(-50%, 50%) scale(calc(var(--s) * var(--in)));
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: calc(2.5 * var(--u)) solid var(--ink);
+      border-radius: 50%;
+      background: var(--frame-color);
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+      cursor: pointer;
+      pointer-events: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .back--shown { pointer-events: auto; }
+    .back:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+    .back__ink { filter: url(#title-small-ink); line-height: 1; }
+    .back__arrow {
+      display: block;
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: max(calc(32 * var(--u)), 20px);
+      line-height: 1;
+      color: #ff9c41;
+      transform: translate(-6%, -4%) rotate(-8deg);
+    }
+
+    /* Phones: the titles go a bit bigger and the dots line up in a row along
+       the bottom, where thumbs can reach them, leaving the corner for NEXT.
+       Labels pop up above the dots. */
+    @media (max-width: 700px) {
+      :root { --u: calc(100vw / 760); }
+      .flavor, .flavor-label { --px: 1px; }
+      .flavor {
+        --dot: 32px;
+        left: calc(var(--frame-border) + 34px + var(--i) * 44px);
+        top: auto;
+        bottom: calc(var(--frame-border) + 24px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+      }
+      .flavor-label {
+        left: calc(var(--frame-border) + 34px + var(--i) * 44px);
+        top: auto;
+        bottom: calc(var(--frame-border) + 28px + 48px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+      }
+      .flavor-label__bubble::before {
+        left: 50%;
+        top: auto;
+        bottom: calc(-6.5 * var(--px));
+        margin: 0 0 0 calc(-5 * var(--px));
+        transform: rotate(-45deg);
+      }
+      .back {
+        --d: 1px;
+        left: calc(var(--frame-border) + 34px);
+        bottom: calc(var(--frame-border) + 100px + env(safe-area-inset-bottom, 0px));
+        border-width: 2.5px;
+      }
+      .next__word {
+        left: calc(50% - 20px);
+        top: calc(50% - 20px);
+        font-size: 24px;
+      }
+    }
+
+    /* Loading screen (src/loader.js): full-bleed pink with "Loading..." in the
+       title lettering and an ink-outlined progress bar, from the mockup. The
+       SVG holds the curtain that lifts off with a wavy edge when it's done. */
+    .loader {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: grid;
+      place-items: center;
+      background: #ff71c3;
+    }
+    .loader__wave { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+    .loader__curtain { fill: #ff71c3; }
+    .loader__edge { fill: none; stroke: var(--ink); stroke-width: calc(3.5 * var(--u)); stroke-linejoin: round; filter: url(#ink-wobble); }
+    .loader__content {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: calc(38 * var(--u));
+    }
+    .loader__word {
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: calc(38.5 * var(--u));
+      line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      color: var(--frame-color);
+      filter: url(#title-small-ink);
+    }
+    .loader__bar {
+      --d: var(--u);
+      position: relative;
+      width: max(calc(320 * var(--u)), 220px);
+      height: max(calc(17 * var(--u)), 12px);
+      box-sizing: border-box;
+      border: max(calc(2.5 * var(--u)), 2px) solid var(--ink);
+      border-radius: 999px;
+      background: var(--frame-color);
+      overflow: hidden;
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+    }
+    .loader__fill {
+      position: absolute;
+      inset: 0;
+      background: #ff9c41;
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+    }
+
+    /* Mockup overlay for checking positions. */
+    .layout-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .layout-overlay[hidden] { display: none; }
+
+    /* Keep the slider panel inside the frame. */
+    .lil-gui.autoPlace {
+      top: calc(var(--frame-border) + 0.75rem);
+      right: calc(var(--frame-border) + 0.75rem);
+      max-height: calc(100% - 2 * var(--frame-border) - 1.5rem);
+      border-radius: calc(var(--frame-radius) * 0.4);
+      overflow: hidden auto;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/",
+        "gsap": "./vendor/gsap/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- Gives the titles and buttons the same hand-drawn wobble as the toast.
+       The title filters also draw one ink outline (a grown copy of all the
+       letters together) and five stacked copies of it behind, which blend
+       into one extruded shadow. main.js keeps the
+       outline width and shadow offset in step with the window size. -->
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <filter id="title-big-ink" x="-10%" y="-20%" width="120%" height="150%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="grown" />
+      <feFlood flood-color="#211d1e" result="ink" />
+      <feComposite in="ink" in2="grown" operator="in" result="outline" />
+      <feOffset in="outline" data-step="0.2" result="s1" />
+      <feOffset in="outline" data-step="0.4" result="s2" />
+      <feOffset in="outline" data-step="0.6" result="s3" />
+      <feOffset in="outline" data-step="0.8" result="s4" />
+      <feOffset in="outline" data-step="1" result="s5" />
+      <feMerge result="drawn">
+        <feMergeNode in="s5" />
+        <feMergeNode in="s4" />
+        <feMergeNode in="s3" />
+        <feMergeNode in="s2" />
+        <feMergeNode in="s1" />
+        <feMergeNode in="outline" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+      <feTurbulence type="fractalNoise" baseFrequency="0.3" numOctaves="1" seed="1" result="grain" />
+      <feDisplacementMap in="drawn" in2="grain" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+    <filter id="title-small-ink" x="-10%" y="-30%" width="120%" height="170%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="grown" />
+      <feFlood flood-color="#211d1e" result="ink" />
+      <feComposite in="ink" in2="grown" operator="in" result="outline" />
+      <feOffset in="outline" data-step="0.2" result="s1" />
+      <feOffset in="outline" data-step="0.4" result="s2" />
+      <feOffset in="outline" data-step="0.6" result="s3" />
+      <feOffset in="outline" data-step="0.8" result="s4" />
+      <feOffset in="outline" data-step="1" result="s5" />
+      <feMerge result="drawn">
+        <feMergeNode in="s5" />
+        <feMergeNode in="s4" />
+        <feMergeNode in="s3" />
+        <feMergeNode in="s2" />
+        <feMergeNode in="s1" />
+        <feMergeNode in="outline" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+      <feTurbulence type="fractalNoise" baseFrequency="0.3" numOctaves="1" seed="1" result="grain" />
+      <feDisplacementMap in="drawn" in2="grain" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+    <filter id="ink-wobble" x="-5%" y="-5%" width="110%" height="110%">
+      <!-- Same grain and wiggle size as the toast's outlines. -->
+      <feTurbulence type="fractalNoise" baseFrequency="0.3" numOctaves="1" seed="1" />
+      <feDisplacementMap in="SourceGraphic" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </svg>
+  <script>
+    // Size the title outline and shadow right away, so the loading screen's
+    // lettering has them from its first frame (src/tweaks.js keeps them in
+    // step with the settings and window size after that).
+    (function () {
+      var w = window.innerWidth;
+      var u = w <= 700 ? w / 760 : w / 1440;
+      var line = Math.max(Math.max(3.5 * w / 1440, 1.5) * 0.9, 2);
+      var sizes = { 'title-big-ink': [6, 8], 'title-small-ink': [3, 3.5] };
+      Object.keys(sizes).forEach(function (id) {
+        var filter = document.getElementById(id);
+        filter.querySelector('feMorphology').setAttribute('radius', line.toFixed(2));
+        filter.querySelectorAll('feOffset').forEach(function (offset) {
+          var step = Number(offset.dataset.step);
+          offset.setAttribute('dx', (sizes[id][0] * u * step).toFixed(2));
+          offset.setAttribute('dy', (sizes[id][1] * u * step).toFixed(2));
+        });
+      });
+    })();
+  </script>
+  <div class="loader" role="status" aria-label="Loading">
+    <svg class="loader__wave" aria-hidden="true"><path class="loader__curtain" /><path class="loader__edge" /></svg>
+    <div class="loader__content" aria-hidden="true">
+      <div class="loader__word">Loading...</div>
+      <div class="loader__bar"><div class="loader__fill"></div></div>
+    </div>
+  </div>
+  <h1 class="title" aria-label="Pick your spread">
+    <span class="title__small" aria-hidden="true"><span>P</span><span>i</span><span>c</span><span>k</span> <span>y</span><span>o</span><span>u</span><span>r</span></span>
+    <span class="title__big" aria-hidden="true"><span>S</span><span>p</span><span>r</span><span>e</span><span>a</span><span>d</span></span>
+  </h1>
+  <ul class="flavors" aria-label="Spread flavors"></ul>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

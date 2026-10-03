@@ -1,0 +1,13 @@
+# Netlify settings for Spread The Love.
+# The site is plain HTML/JS with everything vendored (no npm, no bundler),
+# so there is nothing to build: Netlify publishes the repo root as is.
+#
+# Branches:
+#   main    -> production site
+#   staging -> branch deploy at https://staging--<site-name>.netlify.app
+# (Branch deploys are switched on in the Netlify dashboard, not in this file.)
+
+[build]
+  publish = "."
+  command = ""
+
