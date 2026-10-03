@@ -78,14 +78,10 @@ export function popLabel(label) {
   };
 }
 
-// BACK: a cream round button with an orange arrow, bottom left. It starts
-// hidden; `show()` and `hide()` pop it in and out.
-const arrow = `<svg viewBox="0 0 32 28" aria-hidden="true">
-  <path d="M3 14 L13 23 L13 18 C20 18 26 16 28 8 C24 12 19 11 13 11 L13 5 Z" transform="translate(1.6 1.6)"
-    fill="#211d1e" stroke="#211d1e" stroke-width="2.4" stroke-linejoin="round" />
-  <path d="M3 14 L13 23 L13 18 C20 18 26 16 28 8 C24 12 19 11 13 11 L13 5 Z"
-    fill="#ff9c41" stroke="#211d1e" stroke-width="2.4" stroke-linejoin="round" />
-</svg>`;
+// BACK: a cream round button with an orange arrow (BD Karlo's own ← glyph,
+// inked like the titles), bottom left. It starts hidden; `show()` and
+// `hide()` pop it in and out.
+const arrow = '<span class="back__ink" aria-hidden="true"><span class="back__arrow">\u2190</span></span>';
 
 export function createBackButton({ onClick } = {}) {
   const button = document.createElement('button');

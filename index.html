@@ -269,7 +269,15 @@
     }
     .back--shown { pointer-events: auto; }
     .back:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
-    .back svg { width: 64%; height: auto; overflow: visible; }
+    .back__ink { filter: url(#title-small-ink); line-height: 1; }
+    .back__arrow {
+      display: block;
+      font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
+      font-size: max(calc(38 * var(--u)), 23px);
+      line-height: 1;
+      color: #ff9c41;
+      transform: translate(-6%, -4%);
+    }
 
     /* Phones: the titles go a bit bigger and the dots line up in a row along
        the bottom, where thumbs can reach them, leaving the corner for NEXT.

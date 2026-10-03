@@ -8,11 +8,12 @@ import { bounce, popLabel } from './ui.js';
 
 // x/y are the dot centers on the 1440px-wide mockup.
 export const flavors = [
-  { name: 'Friendship', color: '#ff71c3', x: 154, y: 294 },
+  { name: 'Love', color: '#ff71c3', x: 154, y: 294 },
   { name: 'Joy', color: '#ff9c41', x: 196, y: 350.5 },
-  { name: 'Growth', color: '#41ff70', x: 236, y: 407 },
-  { name: 'Calm', color: '#41e2ff', x: 249, y: 476 },
-  { name: 'Love', color: '#6233dd', x: 261, y: 544.5 },
+  { name: 'Good Vibes', color: '#41ff70', x: 236, y: 407 },
+  { name: 'Chill', color: '#41e2ff', x: 249, y: 476 },
+  // The toast's own purple, so it starts out picked.
+  { name: 'Friendship', color: '#a75bd1', x: 261, y: 544.5 },
 ];
 
 // Easing curves to pick from in the panel ("Spread switch"), as GSAP eases.

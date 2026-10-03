@@ -5,7 +5,11 @@
 import { gsap } from 'gsap';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-const hidden = { '--ty': 0.35, '--sx': 1.5, '--sy': 0, '--tr': 0 };
+// Hidden letters are also fully transparent: a letter squashed to (nearly)
+// zero height can still leave dark specks once the title's ink-outline filter
+// is drawn around it, so it mustn't be drawn at all.
+const shape = { '--ty': 0.35, '--sx': 1.5, '--sy': 0.02, '--tr': 0 };
+const hidden = { ...shape, autoAlpha: 0 };
 
 function letters(line) {
   return [...line.children];
@@ -18,9 +22,12 @@ export function hideTitle(lines) {
 
 export function popIn(line, { delay = 0 } = {}) {
   const quick = reducedMotion.matches;
+  const each = quick ? 0 : 0.065;
+  // Each letter becomes visible the moment its spring starts.
+  gsap.to(letters(line), { autoAlpha: 1, duration: 0.01, delay, stagger: each, overwrite: 'auto' });
   return gsap.fromTo(
     letters(line),
-    { ...hidden, '--tr': () => gsap.utils.random(-25, 25) },
+    { ...shape, '--tr': () => gsap.utils.random(-25, 25) },
     {
       '--ty': 0,
       '--sx': 1,
@@ -29,21 +36,25 @@ export function popIn(line, { delay = 0 } = {}) {
       delay,
       duration: quick ? 0.3 : 1.1,
       ease: quick ? 'power2.out' : 'elastic.out(1, 0.42)',
-      stagger: quick ? 0 : 0.065,
-      overwrite: true,
+      stagger: each,
+      overwrite: 'auto',
     },
   );
 }
 
 export function popOut(line) {
+  const duration = reducedMotion.matches ? 0.15 : 0.32;
+  const stagger = { each: 0.035, from: 'end' };
+  // Gone (transparent) right as each letter flattens out.
+  gsap.to(letters(line), { autoAlpha: 0, duration, ease: 'expo.in', stagger, overwrite: 'auto' });
   return gsap.to(letters(line), {
     '--ty': 0.25,
     '--sx': 1.4,
-    '--sy': 0,
-    duration: reducedMotion.matches ? 0.15 : 0.32,
+    '--sy': 0.02,
+    duration,
     ease: 'back.in(2.2)',
-    stagger: { each: 0.035, from: 'end' },
-    overwrite: true,
+    stagger,
+    overwrite: 'auto',
   });
 }
 

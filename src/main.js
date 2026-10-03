@@ -420,15 +420,17 @@ const steps = {
   message: { word: 'Message', label: 'Pick your message', nudge: { 2: 0.035, 5: -0.04 } },
 };
 let step = 'spread';
+let swaps = 0;
 function goTo(name) {
   if (step === name) return;
   step = name;
   const { word, label, nudge } = steps[name];
   if (name === 'message') back.show(0.3);
   else back.hide();
-  // If the user clicks again mid-swap, the newer popOut replaces this one
-  // and this word swap never runs.
+  // If the user clicks again mid-swap, only the latest swap goes through.
+  const swap = ++swaps;
   popOut(titleBig).then(() => {
+    if (swap !== swaps) return;
     setWord(titleBig, word, nudge);
     titleEl.classList.toggle('title--message', name === 'message');
     titleEl.setAttribute('aria-label', label);
