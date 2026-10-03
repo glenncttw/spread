@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import GUI from '../vendor/lil-gui/lil-gui.esm.min.js';
 import { palette, PATTERNS, COLOR_MODES } from './toon.js';
 import { easings } from './spreadSwitch.js';
-import { pressureDefaults } from './pressure.js';
 
 // Slider-friendly settings (pixels, degrees, 0..1). `applySettings` turns them
 // into shader uniforms. "Copy settings" puts the current values on the
@@ -51,8 +50,6 @@ export const defaults = {
   bgDotSize: 6,
   bgDotAngle: -12,
   bgDotDrift: 2,
-  bgDotScale: 1,
-  ...pressureDefaults,
   bgDots: 0.7,
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
@@ -119,11 +116,6 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgDotAngle.value = THREE.MathUtils.degToRad(s.bgDotAngle);
   u.uBgDots.value = s.bgDots;
   u.uBgDotDrift.value = s.bgDotDrift;
-  u.uBgDotScale.value = s.bgDotScale;
-  u.uPressDisplace.value = s.pressDisplace;
-  u.uPressPressure.value = s.pressPressure;
-  u.uPressDeform.value = s.pressDeform;
-  u.uPressWobble.value = s.pressWobble;
   u.uBgNoiseOpacity.value = s.bgNoise;
   u.uBgNoiseScale.value = s.bgNoiseScale;
   u.uBgSoft.value = s.bgSoft;
@@ -277,23 +269,10 @@ export function createTweakPanel(settings, onChange, overlay) {
   bg.add(settings, 'bgNoiseScale', 0.2, 5, 0.05).name('Noise size');
   bg.add(settings, 'bgFlow', 0, 1, 0.01).name('Swirl');
   bg.add(settings, 'bgSpeed', 0, 5, 0.05).name('Movement speed');
-  bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Grid spacing (px)');
-  bg.add(settings, 'bgDotScale', 0.3, 1.6, 0.01).name('Dot size');
+  bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
   bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');
   bg.add(settings, 'bgDots', 0, 1, 0.01).name('Dot strength');
   bg.add(settings, 'bgDotDrift', 0, 4, 0.05).name('Dot drift speed');
-
-  const ink = gui.addFolder('Cursor push on the dots');
-  ink.add(settings, 'pressRadius', 20, 300, 1).name('Mouse radius (px)');
-  ink.add(settings, 'pressForce', 0, 1.5, 0.01).name('Mouse force');
-  ink.add(settings, 'pressSpeed', 0, 3, 0.05).name('Velocity influence');
-  ink.add(settings, 'pressPressure', 0, 3, 0.05).name('Pressure strength');
-  ink.add(settings, 'pressDisplace', 0, 3, 0.05).name('Displacement');
-  ink.add(settings, 'pressDeform', 0, 3, 0.05).name('Dot deformation');
-  ink.add(settings, 'pressTrail', 0, 1.5, 0.01).name('Trail persistence');
-  ink.add(settings, 'pressDecay', 0.5, 20, 0.1).name('Decay speed');
-  ink.add(settings, 'pressReturn', 2, 150, 1).name('Return-to-rest speed');
-  ink.add(settings, 'pressWobble', 0, 1, 0.01).name('Wobble');
 
   const frame = gui.addFolder('Frame (sizes at 1440px wide)');
   frame.add(settings, 'frameBorder', 0, 60, 1).name('Border (px)');

@@ -48,11 +48,14 @@ export function popOut(line) {
 }
 
 // Replaces a title line's letters with a new word, one span per letter.
-export function setWord(line, word) {
+// `nudge` shifts single letters sideways (by letter index, in em) where the
+// font's spacing needs a hand.
+export function setWord(line, word, nudge = {}) {
   line.replaceChildren(
-    ...[...word].map((ch) => {
+    ...[...word].map((ch, i) => {
       const span = document.createElement('span');
       span.textContent = ch;
+      if (nudge[i]) span.style.setProperty('--kx', nudge[i]);
       return span;
     }),
   );

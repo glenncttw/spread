@@ -20,11 +20,10 @@ import {
 } from './tweaks.js';
 import { createSpreadSwitch } from './spreadSwitch.js';
 import { createOverlay } from './overlay.js';
-import { createNextButton } from './ui.js';
+import { createNextButton, createBackButton } from './ui.js';
 import { createLoader } from './loader.js';
 import { createStreaks } from './streaks.js';
 import { hideTitle, popIn, popOut, setWord } from './title.js';
-import { createPressureField, CELL } from './pressure.js';
 import { gsap } from 'gsap';
 
 const loader = createLoader();
@@ -337,9 +336,6 @@ const bgTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, 
 const bgMaterial = createBackgroundMaterial(outline.uniforms);
 const bgScene = fullScreen(bgMaterial);
 outline.uniforms.tBg.value = bgTarget.texture;
-// The cursor's push on the background dots.
-const press = createPressureField(renderer);
-outline.uniforms.uPressCell.value = CELL;
 
 function resize() {
   const w = window.innerWidth;
@@ -356,8 +352,6 @@ function resize() {
   outline.uniforms.uPixelRatio.value = dpr;
   bgTarget.setSize(Math.max(1, Math.round(w * BG_SCALE)), Math.max(1, Math.round(h * BG_SCALE)));
   bgMaterial.uniforms.uView.value.set(w, h);
-  press.resize(w, h);
-  outline.uniforms.uPressTexel.value.set(CELL / w, CELL / h);
   next.layout(w, h);
   applyAll();
 }
@@ -414,25 +408,36 @@ const panel = showPanel
     }, overlay)
   : null;
 
-// NEXT moves on to the message step. Only its title is built so far: the
-// big word springs out and "Message" springs in, leaning the other way.
+// NEXT moves on to the message step and BACK returns to the spread. Only the
+// title changes so far: the big word springs out and the other springs in,
+// "Message" leaning the opposite way to "Spread".
 const titleEl = document.querySelector('.title');
 const titleSmall = document.querySelector('.title__small');
 const titleBig = document.querySelector('.title__big');
+const steps = {
+  spread: { word: 'Spread', label: 'Pick your spread' },
+  // The first S sits a touch right and the G a touch left (by eye).
+  message: { word: 'Message', label: 'Pick your message', nudge: { 2: 0.035, 5: -0.04 } },
+};
 let step = 'spread';
-const next = createNextButton({
-  onClick() {
-    if (step !== 'spread') return;
-    step = 'message';
-    popOut(titleBig).then(() => {
-      setWord(titleBig, 'Message');
-      titleEl.classList.add('title--message');
-      titleEl.setAttribute('aria-label', 'Pick your message');
-      shuffleLetters();
-      popIn(titleBig);
-    });
-  },
-});
+function goTo(name) {
+  if (step === name) return;
+  step = name;
+  const { word, label, nudge } = steps[name];
+  if (name === 'message') back.show(0.3);
+  else back.hide();
+  // If the user clicks again mid-swap, the newer popOut replaces this one
+  // and this word swap never runs.
+  popOut(titleBig).then(() => {
+    setWord(titleBig, word, nudge);
+    titleEl.classList.toggle('title--message', name === 'message');
+    titleEl.setAttribute('aria-label', label);
+    shuffleLetters();
+    popIn(titleBig);
+  });
+}
+const next = createNextButton({ onClick: () => goTo('message') });
+const back = createBackButton({ onClick: () => goTo('spread') });
 // Everything that pops in after the loading screen starts hidden.
 hideTitle([titleSmall, titleBig]);
 gsap.set(['.flavor__dot', next.element], { '--in': 0 });
@@ -506,8 +511,6 @@ renderer.setAnimationLoop((now) => {
     wobbles.forEach((w) => w.setAttribute('seed', String(1 + (boilFrame % 7))));
   }
 
-  if (!still) press.step(dt, pointerPx.x, window.innerHeight - pointerPx.y, pointerPx.inside, settings);
-  outline.uniforms.tPress.value = press.texture; // swaps every frame
   renderer.setRenderTarget(bgTarget);
   renderer.render(bgScene, quadCamera);
 

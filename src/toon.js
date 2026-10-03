@@ -508,15 +508,6 @@ export function createOutlineMaterial() {
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
       uBgDotDrift: { value: 2 }, // dot rows per second, along the screen's tilt
-      uBgDotScale: { value: 1 }, // dot size, relative to the grid spacing
-      // The cursor's push on the dots (see pressure.js).
-      tPress: { value: null },
-      uPressTexel: { value: new THREE.Vector2(1, 1) },
-      uPressCell: { value: 8 }, // CSS px per push cell
-      uPressDisplace: { value: 1 },
-      uPressPressure: { value: 1 },
-      uPressDeform: { value: 1 },
-      uPressWobble: { value: 0.3 },
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
@@ -565,14 +556,6 @@ export function createOutlineMaterial() {
       uniform float uBgDotSize;
       uniform float uBgDotAngle;
       uniform float uBgDotDrift;
-      uniform float uBgDotScale;
-      uniform sampler2D tPress;
-      uniform vec2 uPressTexel;
-      uniform float uPressCell;
-      uniform float uPressDisplace;
-      uniform float uPressPressure;
-      uniform float uPressDeform;
-      uniform float uPressWobble;
       uniform float uBgDots;
       uniform float uBgSoft;
       uniform vec3 uFrame;
@@ -606,48 +589,16 @@ export function createOutlineMaterial() {
       // One halftone screen over the background colors (drawn at low
       // resolution by the background pass): dots grow where the color is
       // darker and are printed in a deeper, richer version of the color
-      // underneath. The cursor's push (tPress, see pressure.js) shoves the
-      // dots along, swells them where they're squeezed together, shrinks
-      // them where they're pulled apart, and stretches fast-moving ones into
-      // ovals and lumpy blobs. Edges stay hard, like a print.
+      // underneath.
       vec3 halftone(vec3 color, vec2 cssPx) {
-        vec4 press = texture2D(tPress, vUv);
-        vec2 shove = press.xy * uPressDisplace;
-        vec2 motion = press.zw;
-        // Squeeze: the push converging (dots crowding) is positive.
-        vec2 e = uPressTexel;
-        float squeeze = -(
-          texture2D(tPress, vUv + vec2(e.x, 0.0)).x - texture2D(tPress, vUv - vec2(e.x, 0.0)).x +
-          texture2D(tPress, vUv + vec2(0.0, e.y)).y - texture2D(tPress, vUv - vec2(0.0, e.y)).y
-        ) / (2.0 * uPressCell);
-
         float c = cos(uBgDotAngle), s = sin(uBgDotAngle);
-        mat2 tilt = mat2(c, -s, s, c);
-        vec2 grid = tilt * (cssPx - shove) / uBgDotSize;
+        vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
         // The screen slides slowly upward along its own tilt, so the dots
         // drift diagonally while their sizes keep following the colors below.
         grid.y -= uBgTime * uBgDotDrift;
-        vec2 cellId = floor(grid);
-        vec2 o = fract(grid) - 0.5;
-        // Stretch along the motion: measure distance shorter along it, so
-        // the dot reaches further that way and pinches in a little across.
-        vec2 along = tilt * motion;
-        float stretch = min(length(motion) * uPressDeform / 700.0, 0.9);
-        vec2 dir = along / (length(along) + 1e-5);
-        float a = dot(o, dir);
-        o = dir * a / (1.0 + stretch * 1.4) + (o - dir * a) * (1.0 + stretch * 0.35);
-        float d = length(o);
-
+        float d = length(fract(grid) - 0.5);
         float luma = dot(color, vec3(0.299, 0.587, 0.114));
         float r = sqrt(clamp((1.0 - luma) * mix(1.2, 0.6, uBgSoft) + mix(0.12, 0.3, uBgSoft), 0.0, 1.0)) * 0.55;
-        r *= uBgDotScale;
-        // Comic imperfection: each dot is a little lumpy and a little off in
-        // size, more so while it's being shoved around.
-        float seed = hash(cellId);
-        float angle = atan(o.y, o.x);
-        float lump = sin(angle * 3.0 + seed * 6.28) * 0.6 + sin(angle * 5.0 + seed * 17.0) * 0.4;
-        r *= 1.0 + lump * (0.05 * uPressWobble + 0.2 * stretch) + (seed - 0.5) * 0.18 * uPressWobble;
-        r *= clamp(1.0 + squeeze * uPressPressure, 0.6, 1.7);
         float aa = fwidth(d) * 0.75;
         float dotMask = 1.0 - smoothstep(r - aa, r + aa, d);
         vec3 ink = mix(pow(color, vec3(1.8)) * 0.85, color * 0.88, uBgSoft);

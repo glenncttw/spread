@@ -8,11 +8,11 @@ import { bounce, popLabel } from './ui.js';
 
 // x/y are the dot centers on the 1440px-wide mockup.
 export const flavors = [
-  { name: 'Love', color: '#dd3336', x: 220, y: 279 },
-  { name: 'Joy', color: '#fabe4c', x: 235, y: 339 },
-  { name: 'Calm', color: '#33c3dd', x: 250.5, y: 399 },
-  { name: 'Growth', color: '#9cdd33', x: 235, y: 459 },
-  { name: 'Friendship', color: '#ff71c3', x: 219.5, y: 519 },
+  { name: 'Friendship', color: '#ff71c3', x: 154, y: 294 },
+  { name: 'Joy', color: '#ff9c41', x: 196, y: 350.5 },
+  { name: 'Growth', color: '#41ff70', x: 236, y: 407 },
+  { name: 'Calm', color: '#41e2ff', x: 249, y: 476 },
+  { name: 'Love', color: '#6233dd', x: 261, y: 544.5 },
 ];
 
 // Easing curves to pick from in the panel ("Spread switch"), as GSAP eases.

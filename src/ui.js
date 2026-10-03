@@ -78,6 +78,41 @@ export function popLabel(label) {
   };
 }
 
+// BACK: a cream round button with an orange arrow, bottom left. It starts
+// hidden; `show()` and `hide()` pop it in and out.
+const arrow = `<svg viewBox="0 0 32 28" aria-hidden="true">
+  <path d="M3 14 L13 23 L13 18 C20 18 26 16 28 8 C24 12 19 11 13 11 L13 5 Z" transform="translate(1.6 1.6)"
+    fill="#211d1e" stroke="#211d1e" stroke-width="2.4" stroke-linejoin="round" />
+  <path d="M3 14 L13 23 L13 18 C20 18 26 16 28 8 C24 12 19 11 13 11 L13 5 Z"
+    fill="#ff9c41" stroke="#211d1e" stroke-width="2.4" stroke-linejoin="round" />
+</svg>`;
+
+export function createBackButton({ onClick } = {}) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'back';
+  button.setAttribute('aria-label', 'Back');
+  button.tabIndex = -1;
+  button.innerHTML = arrow;
+  document.body.append(button);
+  bounce(button, { grow: 1.12 });
+  button.addEventListener('click', () => onClick?.());
+  const quick = () => reducedMotion.matches;
+  return {
+    element: button,
+    show(delay = 0) {
+      button.classList.add('back--shown');
+      button.tabIndex = 0;
+      gsap.to(button, { '--in': 1, delay, duration: quick() ? 0.2 : 0.8, ease: quick() ? 'power2.out' : 'elastic.out(1, 0.5)', overwrite: true });
+    },
+    hide() {
+      button.classList.remove('back--shown');
+      button.tabIndex = -1;
+      gsap.to(button, { '--in': 0, duration: 0.25, ease: 'back.in(2)', overwrite: true });
+    },
+  };
+}
+
 // The NEXT button: a big pink circle tucked into the bottom right corner. The
 // circle itself is drawn by the canvas (so it sits under the frame, with the
 // same wobbly ink line); this button is the clickable part and holds the word.

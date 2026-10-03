@@ -48,7 +48,8 @@
     .title > span > span {
       display: inline-block;
       transform-origin: 50% 90%;
-      transform: translateY(calc(var(--ty, 0) * 1em)) rotate(calc((var(--lean, 0) + var(--tr, 0)) * 1deg))
+      /* --kx nudges a single letter sideways (kerning, in em). */
+      transform: translate(calc(var(--kx, 0) * 1em), calc(var(--ty, 0) * 1em)) rotate(calc((var(--lean, 0) + var(--tr, 0)) * 1deg))
         scale(var(--sx, 1), var(--sy, 1));
     }
     /* "Message" leans the opposite way to "Spread". */
@@ -88,7 +89,7 @@
          real pixel on phones. --dot is the dot's size. GSAP (src/ui.js)
          tweens --s (hover size) and --press (pushed in when picked). */
       --px: var(--u);
-      --dot: calc(40 * var(--u));
+      --dot: calc(50 * var(--u));
       --s: 1;
       --press: 0;
       position: absolute;
@@ -141,7 +142,7 @@
     .flavor-label {
       --px: var(--u);
       position: absolute;
-      left: calc((var(--x) + 38) * var(--u));
+      left: calc((var(--x) + 42) * var(--u));
       top: calc(var(--y) * var(--u));
       transform: translateY(-50%);
       pointer-events: none;
@@ -235,6 +236,41 @@
       white-space: nowrap;
     }
 
+    /* BACK: a cream round button in the bottom left corner, outlined and
+       stacked like the color dots, with an orange arrow. It only shows on the
+       message step; --in is its pop-in (src/main.js), --s its hover bounce. */
+    .back {
+      --s: 1;
+      --in: 0;
+      --d: var(--u);
+      position: fixed;
+      left: calc(95.5 * var(--u));
+      bottom: calc(96 * var(--u));
+      width: max(calc(66 * var(--u)), 40px);
+      height: max(calc(66 * var(--u)), 40px);
+      transform: translate(-50%, 50%) scale(calc(var(--s) * var(--in)));
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: calc(2.5 * var(--u)) solid var(--ink);
+      border-radius: 50%;
+      background: var(--frame-color);
+      box-shadow:
+        calc(0.68 * var(--d)) calc(0.68 * var(--d)) 0 var(--ink),
+        calc(1.35 * var(--d)) calc(1.35 * var(--d)) 0 var(--ink),
+        calc(2 * var(--d)) calc(2 * var(--d)) 0 var(--ink),
+        calc(2.71 * var(--d)) calc(2.71 * var(--d)) 0 var(--ink),
+        calc(3.39 * var(--d)) calc(3.39 * var(--d)) 0 var(--ink);
+      filter: url(#ink-wobble);
+      cursor: pointer;
+      pointer-events: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .back--shown { pointer-events: auto; }
+    .back:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+    .back svg { width: 64%; height: auto; overflow: visible; }
+
     /* Phones: the titles go a bit bigger and the dots line up in a row along
        the bottom, where thumbs can reach them, leaving the corner for NEXT.
        Labels pop up above the dots. */
@@ -260,6 +296,12 @@
         bottom: calc(-6.5 * var(--px));
         margin: 0 0 0 calc(-5 * var(--px));
         transform: rotate(-45deg);
+      }
+      .back {
+        --d: 1px;
+        left: calc(var(--frame-border) + 34px);
+        bottom: calc(var(--frame-border) + 100px + env(safe-area-inset-bottom, 0px));
+        border-width: 2.5px;
       }
       .next__word {
         left: calc(50% - 20px);
