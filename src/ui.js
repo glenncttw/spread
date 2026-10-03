@@ -48,7 +48,7 @@ export function bounce(el, { grow = 1.2, onHover, onLeave } = {}) {
   });
 }
 
-// A speech-bubble label that pops out next to its button.
+// A speech-bubble label that pops (and swings) out next to its button.
 export function popLabel(label) {
   const pill = label.firstElementChild;
   gsap.set(pill, { autoAlpha: 0 });
@@ -57,12 +57,14 @@ export function popLabel(label) {
       const side = !phone.matches;
       gsap.fromTo(
         pill,
-        { autoAlpha: 0, scale: 0.6, x: side ? -8 : 0, y: side ? 0 : 6 },
+        // Beside the dot it also swings in, pivoting on its left end.
+        { autoAlpha: 0, scale: 0.6, x: side ? -8 : 0, y: side ? 0 : 6, rotation: side ? -35 : 0 },
         {
           autoAlpha: 1,
           scale: 1,
           x: 0,
           y: 0,
+          rotation: 0,
           transformOrigin: side ? '0% 50%' : '50% 100%',
           duration: reducedMotion.matches ? 0.15 : 0.4,
           ease: reducedMotion.matches ? 'power1.out' : 'back.out(2.5)',

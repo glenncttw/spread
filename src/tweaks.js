@@ -54,6 +54,8 @@ export const defaults = {
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
   bgSoft: 0.6,
+  bgLiquid: 1,
+  bgDrag: 1,
   // Frame sizes are what they measure on a 1440px-wide screen; they scale
   // with the window width from there.
   frameBorder: 20,
@@ -119,6 +121,8 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgNoiseOpacity.value = s.bgNoise;
   u.uBgNoiseScale.value = s.bgNoiseScale;
   u.uBgSoft.value = s.bgSoft;
+  u.uBgLiquid.value = s.bgLiquid;
+  u.uBgDrag.value = s.bgDrag;
   u.uFrameColor.value.set(s.frameColor);
   u.uFrameInk.value.set(s.frameInk);
   const f = frameSize(s);
@@ -268,6 +272,8 @@ export function createTweakPanel(settings, onChange, overlay) {
   bg.add(settings, 'bgNoise', 0, 1, 0.01).name('Noise colors (soft light)');
   bg.add(settings, 'bgNoiseScale', 0.2, 5, 0.05).name('Noise size');
   bg.add(settings, 'bgFlow', 0, 1, 0.01).name('Swirl');
+  bg.add(settings, 'bgLiquid', 0, 3, 0.05).name('Liquid flow');
+  bg.add(settings, 'bgDrag', 0, 3, 0.05).name('Cursor drag');
   bg.add(settings, 'bgSpeed', 0, 5, 0.05).name('Movement speed');
   bg.add(settings, 'bgDotSize', 2, 20, 0.5).name('Dot size');
   bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');

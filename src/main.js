@@ -8,6 +8,7 @@ import {
   createToonMaterial,
   createNormalMaterial,
   createOutlineMaterial,
+  createBackgroundMaterial,
 } from './toon.js';
 import {
   defaults,
@@ -22,6 +23,7 @@ import { createOverlay } from './overlay.js';
 import { createNextButton } from './ui.js';
 import { createLoader } from './loader.js';
 import { createStreaks } from './streaks.js';
+import { createFluidTrail } from './fluid.js';
 import { gsap } from 'gsap';
 
 const loader = createLoader();
@@ -58,6 +60,7 @@ const shared = createSharedUniforms();
 const dissolve = createDissolveUniforms();
 
 const materials = {
+  // The bread holes are on the underside (the crumb faces up and down).
   'Purple Crumb': createToonMaterial({ ...palette.crumb, holes: true }, shared),
   'Purple Crust': createToonMaterial(palette.crust, shared),
   'Purple Spread': createToonMaterial({ ...palette.spread, specular: 1 }, shared, dissolve),
@@ -119,9 +122,9 @@ scene.add(recoil);
 const intro = { t: 0 };
 const streaks = createStreaks('#ffedcb');
 placement.add(streaks.group);
+const away = new THREE.Vector3(); // scratch: the camera's view direction
 function showIntro() {
   const t = intro.t;
-  const away = new THREE.Vector3();
   camera.getWorldDirection(away);
   travel.position.copy(away).multiplyScalar(18 * (1 - t) ** 2);
   const turn = Math.PI * 4 * (1 - t);
@@ -152,7 +155,6 @@ function spinToast(seconds) {
     onUpdate() {
       const turn = (Math.PI * 4 + from) * (1 - whirl.t);
       flip.rotation.x = turn;
-      const away = new THREE.Vector3();
       camera.getWorldDirection(away);
       recoil.position.copy(away).multiplyScalar(3 * Math.sin(Math.PI * whirl.t));
       switchStreaks.update(whirl.t, turn);
@@ -312,11 +314,22 @@ outline.uniforms.tNormal.value = normalTarget.texture;
 outline.uniforms.tDepth.value = normalTarget.depthTexture;
 outline.uniforms.uNear.value = camera.near;
 outline.uniforms.uFar.value = camera.far;
-const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outline);
-quad.frustumCulled = false;
-const quadScene = new THREE.Scene();
-quadScene.add(quad);
 const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+function fullScreen(material) {
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  quad.frustumCulled = false;
+  return new THREE.Scene().add(quad);
+}
+const quadScene = fullScreen(outline);
+
+// The background's soft colors render at a fraction of the screen size (the
+// halftone dots on top are drawn sharp by the outline pass).
+const BG_SCALE = 0.35;
+const bgTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+const bgMaterial = createBackgroundMaterial(outline.uniforms);
+const bgScene = fullScreen(bgMaterial);
+outline.uniforms.tBg.value = bgTarget.texture;
+const fluid = createFluidTrail(bgMaterial.uniforms.uSplats.value);
 
 function resize() {
   const w = window.innerWidth;
@@ -331,6 +344,8 @@ function resize() {
   normalTarget.setSize(w * dpr, h * dpr);
   outline.uniforms.uResolution.value.set(w * dpr, h * dpr);
   outline.uniforms.uPixelRatio.value = dpr;
+  bgTarget.setSize(Math.max(1, Math.round(w * BG_SCALE)), Math.max(1, Math.round(h * BG_SCALE)));
+  bgMaterial.uniforms.uView.value.set(w, h);
   next.layout(w, h);
   applyAll();
 }
@@ -418,6 +433,24 @@ shuffleLetters();
 const wobbles = document.querySelectorAll('feTurbulence');
 let wobbleFrame = -1;
 
+// If the device can't keep up (frames regularly slower than ~45 fps), render
+// at a slightly lower resolution so the motion stays smooth. It only ever
+// steps down, so it can't flicker back and forth.
+const frameTimes = { sum: 0, count: 0 };
+function keepFrameRate(dt) {
+  if (document.hidden || dt <= 0 || intro.t <= 0) return; // not while loading
+  frameTimes.sum += dt;
+  frameTimes.count += 1;
+  if (frameTimes.sum < 2) return;
+  const average = frameTimes.sum / frameTimes.count;
+  frameTimes.sum = frameTimes.count = 0;
+  const ratio = renderer.getPixelRatio();
+  if (average > 1 / 45 && ratio > 1) {
+    renderer.setPixelRatio(Math.max(1, ratio - 0.25));
+    resize();
+  }
+}
+
 let lastFrame = performance.now();
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.05);
@@ -426,6 +459,8 @@ renderer.setAnimationLoop((now) => {
   followCursor(dt, now);
   floatToast(now / 1000);
   updateMagnet(dt);
+  fluid.update(dt, pointerPx.x, window.innerHeight - pointerPx.y, pointerPx.inside && !still);
+  keepFrameRate(dt);
   placeNext();
   scene.updateMatrixWorld();
   if (model) shared.uToastInv.value.copy(model.matrixWorld).invert();
@@ -439,6 +474,9 @@ renderer.setAnimationLoop((now) => {
     wobbleFrame = boilFrame;
     wobbles.forEach((w) => w.setAttribute('seed', String(1 + (boilFrame % 7))));
   }
+
+  renderer.setRenderTarget(bgTarget);
+  renderer.render(bgScene, quadCamera);
 
   renderer.setRenderTarget(colorTarget);
   renderer.render(scene, camera);

@@ -411,8 +411,8 @@ export function createToonMaterial({ base, shade, dots, specular = 0, holes = fa
         vec3 color = mix(shade, base, lit);
         float holeDark = 0.0;
         #ifdef HOLES
-          // Halftone dots inside each hole, heavier along its upper lip.
-          if (vUp > 0.7) {
+          // Halftone dots inside each hole (on the underside only), heavier along one lip.
+          if (vUp < -0.7) {
             float inHole = step(holeDistance(vWorldPos.xz), 0.0);
             float lip = inHole * step(0.0, holeDistance(vWorldPos.xz + vec2(0.025, -0.035) * uHoleSize));
             holeDark = inHole * 0.2 + lip * 0.35;
@@ -469,7 +469,7 @@ export function createNormalMaterial({ holes = false, shared = null } = {}) {
         #ifdef HOLES
           // Inside a hole the surface "dips": tipping the normal hard makes
           // the outline pass see a fold all around the hole and ink it.
-          if (vUp > 0.7 && holeDistance(vWorldPos.xz) < 0.0) n = normalize(n + vec3(0.9, -0.9, 0.0));
+          if (vUp < -0.7 && holeDistance(vWorldPos.xz) < 0.0) n = normalize(n + vec3(0.9, -0.9, 0.0));
         #endif
         gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
       }
@@ -487,6 +487,7 @@ export function createOutlineMaterial() {
       tColor: { value: null },
       tNormal: { value: null },
       tDepth: { value: null },
+      tBg: { value: null }, // the background pass
       uResolution: { value: new THREE.Vector2() },
       uPixelRatio: { value: 1 },
       uTime: { value: 0 },
@@ -498,6 +499,7 @@ export function createOutlineMaterial() {
       uBoilFps: { value: 6.0 },
       uDepthEdge: { value: 0.03 }, // how big a depth jump needs a line
       uNormalEdge: { value: 0.4 }, // how sharp a fold needs a line
+      // The background's colors; the background pass reads these too.
       uBgTop: { value: new THREE.Color(palette.background[0]) },
       uBgMid: { value: new THREE.Color(palette.background[1]) },
       uBgBottom: { value: new THREE.Color(palette.background[2]) },
@@ -510,6 +512,8 @@ export function createOutlineMaterial() {
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
       uBgSoft: { value: 0.6 }, // 0 = full strength, 1 = pale and gentle
+      uBgLiquid: { value: 1 }, // how strongly the noise swirls
+      uBgDrag: { value: 1 }, // how much the cursor pushes the noise
       // Rounded frame around the scene, in CSS pixels:
       // x = border width, y = corner radius, z = outline width.
       uFrame: { value: new THREE.Vector3(20, 32, 2) },
@@ -538,6 +542,7 @@ export function createOutlineMaterial() {
       uniform sampler2D tColor;
       uniform sampler2D tNormal;
       uniform sampler2D tDepth;
+      uniform sampler2D tBg;
       uniform vec2 uResolution;
       uniform float uPixelRatio;
       uniform float uTime;
@@ -549,17 +554,11 @@ export function createOutlineMaterial() {
       uniform float uBoilFps;
       uniform float uDepthEdge;
       uniform float uNormalEdge;
-      uniform vec3 uBgTop;
-      uniform vec3 uBgMid;
-      uniform vec3 uBgBottom;
       uniform float uBgTime;
-      uniform float uBgFlow;
       uniform float uBgDotSize;
       uniform float uBgDotAngle;
       uniform float uBgDotDrift;
       uniform float uBgDots;
-      uniform float uBgNoiseOpacity;
-      uniform float uBgNoiseScale;
       uniform float uBgSoft;
       uniform vec3 uFrame;
       uniform vec3 uFrameColor;
@@ -589,104 +588,11 @@ export function createOutlineMaterial() {
                    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
       }
 
-      // 3D simplex noise (Ashima Arts / Stefan Gustavson, MIT licence).
-      vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-      vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-      vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
-      vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-      float snoise(vec3 v) {
-        const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
-        const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-        vec3 i = floor(v + dot(v, C.yyy));
-        vec3 x0 = v - i + dot(i, C.xxx);
-        vec3 g = step(x0.yzx, x0.xyz);
-        vec3 l = 1.0 - g;
-        vec3 i1 = min(g.xyz, l.zxy);
-        vec3 i2 = max(g.xyz, l.zxy);
-        vec3 x1 = x0 - i1 + C.xxx;
-        vec3 x2 = x0 - i2 + C.yyy;
-        vec3 x3 = x0 - D.yyy;
-        i = mod289(i);
-        vec4 p = permute(permute(permute(
-                  i.z + vec4(0.0, i1.z, i2.z, 1.0))
-                + i.y + vec4(0.0, i1.y, i2.y, 1.0))
-                + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-        float n_ = 0.142857142857;
-        vec3 ns = n_ * D.wyz - D.xzx;
-        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-        vec4 x_ = floor(j * ns.z);
-        vec4 y_ = floor(j - 7.0 * x_);
-        vec4 x = x_ * ns.x + ns.yyyy;
-        vec4 y = y_ * ns.x + ns.yyyy;
-        vec4 h = 1.0 - abs(x) - abs(y);
-        vec4 b0 = vec4(x.xy, y.xy);
-        vec4 b1 = vec4(x.zw, y.zw);
-        vec4 s0 = floor(b0) * 2.0 + 1.0;
-        vec4 s1 = floor(b1) * 2.0 + 1.0;
-        vec4 sh = -step(h, vec4(0.0));
-        vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
-        vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
-        vec3 p0 = vec3(a0.xy, h.x);
-        vec3 p1 = vec3(a0.zw, h.y);
-        vec3 p2 = vec3(a1.xy, h.z);
-        vec3 p3 = vec3(a1.zw, h.w);
-        vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
-        p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
-        vec4 m = max(0.5 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
-        m = m * m;
-        return 105.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
-      }
-
-      // Soft light blend (same formula as CSS / Photoshop).
-      vec3 softLight(vec3 base, vec3 blend) {
-        vec3 d = mix(sqrt(base), ((16.0 * base - 12.0) * base + 4.0) * base, step(base, vec3(0.25)));
-        return mix(
-          base - (1.0 - 2.0 * blend) * base * (1.0 - base),
-          base + (2.0 * blend - 1.0) * (d - base),
-          step(0.5, blend)
-        );
-      }
-
-      // Colorful noise layer: cyan, blue, magenta, yellow and orange fields.
-      vec3 noiseRamp(float x) {
-        x = clamp(x, 0.0, 1.0) * 4.0;
-        vec3 c0 = vec3(0.18, 0.88, 1.0);
-        vec3 c1 = vec3(0.29, 0.24, 1.0);
-        vec3 c2 = vec3(1.0, 0.25, 0.82);
-        vec3 c3 = vec3(1.0, 0.91, 0.23);
-        vec3 c4 = vec3(1.0, 0.35, 0.12);
-        if (x < 1.0) return mix(c0, c1, smoothstep(0.0, 1.0, x));
-        if (x < 2.0) return mix(c1, c2, smoothstep(1.0, 2.0, x));
-        if (x < 3.0) return mix(c2, c3, smoothstep(2.0, 3.0, x));
-        return mix(c3, c4, smoothstep(3.0, 4.0, x));
-      }
-
-      // Pink to orange to green from top to bottom, with a slowly drifting
-      // simplex-noise color layer on top in soft light, then one angled
-      // halftone screen over the result.
-      // bgUv runs 0..1 across the inside of the frame.
-      vec3 background(vec2 cssPx, vec2 bgUv, float aspect) {
-        vec2 p = vec2(bgUv.x * aspect, bgUv.y);
-        float t = uBgTime * 0.05;
-
-        float g = bgUv.y + snoise(vec3(p * 0.9, t)) * 0.12 * uBgFlow;
-        g = clamp(g, 0.0, 1.0);
-        vec3 color = g > 0.5
-          ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
-          : mix(uBgBottom, uBgMid, smoothstep(0.0, 0.5, g));
-
-        vec2 q = p * uBgNoiseScale;
-        float n = snoise(vec3(q + vec2(0.0, t * 0.6), t)) * 0.5 + 0.5;
-        n = mix(n, snoise(vec3(q * 1.9 + 7.3, t * 1.4)) * 0.5 + 0.5, 0.3);
-        vec3 layer = noiseRamp(n);
-        // Softer: the noise colors lean lighter (soft light then mostly
-        // brightens instead of muddying), and the whole thing goes a bit pastel.
-        layer = mix(layer, vec3(1.0), uBgSoft * 0.45);
-        color = mix(color, softLight(color, layer), uBgNoiseOpacity);
-        color = mix(color, vec3(1.0), uBgSoft * 0.22);
-
-        // One halftone screen: dots grow where the color is darker and are
-        // printed in a deeper, richer version of the color underneath.
+      // One halftone screen over the background colors (drawn at low
+      // resolution by the background pass): dots grow where the color is
+      // darker and are printed in a deeper, richer version of the color
+      // underneath. The screen itself is never bent by the liquid.
+      vec3 halftone(vec3 color, vec2 cssPx) {
         float c = cos(uBgDotAngle), s = sin(uBgDotAngle);
         vec2 grid = mat2(c, -s, s, c) * cssPx / uBgDotSize;
         // The screen slides slowly upward along its own tilt, so the dots
@@ -766,10 +672,7 @@ export function createOutlineMaterial() {
 
         vec3 color = texture2D(tColor, vUv).rgb;
         // Nothing was drawn here (only the clear color): show the gradient.
-        if (texture2D(tDepth, vUv).x >= 0.99999) {
-          vec2 bgUv = (cssPx - uFrame.x) / inner;
-          color = background(cssPx, bgUv, inner.x / inner.y);
-        }
+        if (texture2D(tDepth, vUv).x >= 0.99999) color = halftone(texture2D(tBg, vUv).rgb, cssPx);
         color = mix(color, uInk, edge);
         // NEXT: a flat pink circle in the corner with the frame's ink line,
         // wobbling the same way. It sits over the scene and under the frame.
@@ -784,6 +687,181 @@ export function createOutlineMaterial() {
         // A touch of paper grain.
         color *= 1.0 - hash(floor(cssPx)) * 0.035;
         gl_FragColor = vec4(mix(color, uFrameInk, frameLine), 1.0);
+      }
+    `,
+    depthTest: false,
+    depthWrite: false,
+  });
+}
+
+// The background's colors: the gradient plus a liquid simplex-noise layer.
+// The colors are soft, so this pass runs at a fraction of the screen's
+// resolution and the outline pass prints the sharp halftone dots over it.
+// The noise is carried along a slowly turning, swirling flow (the curl of
+// another noise field, so it moves like a liquid without bunching up), and
+// the cursor drags it along as it passes. The gradient and the halftone
+// screen are not moved by the liquid.
+export const FLUID_SPLATS = 10;
+export function createBackgroundMaterial(outlineUniforms) {
+  const u = outlineUniforms;
+  return new THREE.ShaderMaterial({
+    defines: { SPLATS: FLUID_SPLATS },
+    uniforms: {
+      uBgTop: u.uBgTop,
+      uBgMid: u.uBgMid,
+      uBgBottom: u.uBgBottom,
+      uBgTime: u.uBgTime,
+      uBgFlow: u.uBgFlow,
+      uBgNoiseOpacity: u.uBgNoiseOpacity,
+      uBgNoiseScale: u.uBgNoiseScale,
+      uBgSoft: u.uBgSoft,
+      uFrame: u.uFrame,
+      uView: { value: new THREE.Vector2(1, 1) }, // CSS pixels
+      uBgLiquid: u.uBgLiquid,
+      uBgDrag: u.uBgDrag,
+      // The cursor's recent trail: position (CSS px from the bottom left) and
+      // push (CSS px per second, fading out).
+      uSplats: { value: Array.from({ length: FLUID_SPLATS }, () => new THREE.Vector4()) },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBgTop;
+      uniform vec3 uBgMid;
+      uniform vec3 uBgBottom;
+      uniform float uBgTime;
+      uniform float uBgFlow;
+      uniform float uBgNoiseOpacity;
+      uniform float uBgNoiseScale;
+      uniform float uBgSoft;
+      uniform vec3 uFrame;
+      uniform vec2 uView;
+      uniform float uBgLiquid;
+      uniform float uBgDrag;
+      uniform vec4 uSplats[SPLATS];
+      varying vec2 vUv;
+
+      // 3D simplex noise (Ashima Arts / Stefan Gustavson, MIT licence).
+      vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
+      vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+      float snoise(vec3 v) {
+        const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+        const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+        vec3 i = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min(g.xyz, l.zxy);
+        vec3 i2 = max(g.xyz, l.zxy);
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy;
+        vec3 x3 = x0 - D.yyy;
+        i = mod289(i);
+        vec4 p = permute(permute(permute(
+                  i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+        float n_ = 0.142857142857;
+        vec3 ns = n_ * D.wyz - D.xzx;
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_);
+        vec4 x = x_ * ns.x + ns.yyyy;
+        vec4 y = y_ * ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+        vec4 b0 = vec4(x.xy, y.xy);
+        vec4 b1 = vec4(x.zw, y.zw);
+        vec4 s0 = floor(b0) * 2.0 + 1.0;
+        vec4 s1 = floor(b1) * 2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+        vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+        vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+        vec3 p0 = vec3(a0.xy, h.x);
+        vec3 p1 = vec3(a0.zw, h.y);
+        vec3 p2 = vec3(a1.xy, h.z);
+        vec3 p3 = vec3(a1.zw, h.w);
+        vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+        p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+        vec4 m = max(0.5 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+        m = m * m;
+        return 105.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+      }
+
+      // Soft light blend (same formula as CSS / Photoshop).
+      vec3 softLight(vec3 base, vec3 blend) {
+        vec3 d = mix(sqrt(base), ((16.0 * base - 12.0) * base + 4.0) * base, step(base, vec3(0.25)));
+        return mix(
+          base - (1.0 - 2.0 * blend) * base * (1.0 - base),
+          base + (2.0 * blend - 1.0) * (d - base),
+          step(0.5, blend)
+        );
+      }
+
+      // Colorful noise layer: cyan, blue, magenta, yellow and orange fields.
+      vec3 noiseRamp(float x) {
+        x = clamp(x, 0.0, 1.0) * 4.0;
+        vec3 c0 = vec3(0.18, 0.88, 1.0);
+        vec3 c1 = vec3(0.29, 0.24, 1.0);
+        vec3 c2 = vec3(1.0, 0.25, 0.82);
+        vec3 c3 = vec3(1.0, 0.91, 0.23);
+        vec3 c4 = vec3(1.0, 0.35, 0.12);
+        if (x < 1.0) return mix(c0, c1, smoothstep(0.0, 1.0, x));
+        if (x < 2.0) return mix(c1, c2, smoothstep(1.0, 2.0, x));
+        if (x < 3.0) return mix(c2, c3, smoothstep(2.0, 3.0, x));
+        return mix(c3, c4, smoothstep(3.0, 4.0, x));
+      }
+
+      // The flow: the curl of a noise field turns its hills and valleys into
+      // swirls that go round them, so the liquid never piles up anywhere.
+      vec2 flow(vec2 p, float t) {
+        const float e = 0.06;
+        float n = snoise(vec3(p, t));
+        float nx = snoise(vec3(p + vec2(e, 0.0), t));
+        float ny = snoise(vec3(p + vec2(0.0, e), t));
+        return vec2(ny - n, n - nx) / e;
+      }
+
+      void main() {
+        vec2 cssPx = vUv * uView;
+        vec2 inner = max(uView - 2.0 * uFrame.x, vec2(1.0));
+        vec2 bgUv = (cssPx - uFrame.x) / inner;
+        vec2 p = vec2(bgUv.x * inner.x / inner.y, bgUv.y);
+        float t = uBgTime * 0.05;
+
+        // Pink to orange from top to bottom, gently bent.
+        float g = clamp(bgUv.y + snoise(vec3(p * 0.9, t)) * 0.12 * uBgFlow, 0.0, 1.0);
+        vec3 color = g > 0.5
+          ? mix(uBgMid, uBgTop, smoothstep(0.5, 1.0, g))
+          : mix(uBgBottom, uBgMid, smoothstep(0.0, 0.5, g));
+
+        // Carry the noise a few steps along the swirling flow.
+        vec2 q = p * uBgNoiseScale;
+        for (int i = 0; i < 3; i++) q -= flow(q * 0.55 + 3.1, t * 1.7) * 0.035 * uBgLiquid;
+        // The cursor's trail pushes the liquid the way it moved, strongest in
+        // the middle of each splat, with a little twist so it curls.
+        for (int i = 0; i < SPLATS; i++) {
+          vec2 d = cssPx - uSplats[i].xy;
+          float w = exp(-dot(d, d) / (150.0 * 150.0));
+          vec2 push = uSplats[i].zw * w;
+          q -= (push + vec2(-push.y, push.x) * 0.35) * (0.00018 * uBgDrag * uBgNoiseScale);
+        }
+
+        float n = snoise(vec3(q + vec2(0.0, t * 0.6), t)) * 0.5 + 0.5;
+        n = mix(n, snoise(vec3(q * 1.9 + 7.3, t * 1.4)) * 0.5 + 0.5, 0.3);
+        vec3 layer = noiseRamp(n);
+        // Softer: the noise colors lean lighter (soft light then mostly
+        // brightens instead of muddying), and the whole thing goes a bit pastel.
+        layer = mix(layer, vec3(1.0), uBgSoft * 0.45);
+        color = mix(color, softLight(color, layer), uBgNoiseOpacity);
+        color = mix(color, vec3(1.0), uBgSoft * 0.22);
+        gl_FragColor = vec4(color, 1.0);
       }
     `,
     depthTest: false,
