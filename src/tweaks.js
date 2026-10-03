@@ -50,6 +50,7 @@ export const defaults = {
   bgDotSize: 6,
   bgDotAngle: -12,
   bgDotDrift: 2,
+  bgDotVary: 0.5,
   bgDots: 0.7,
   bgNoise: 0.65,
   bgNoiseScale: 1.2,
@@ -118,6 +119,7 @@ export function applySettings(s, { shared, outline, materials, scene, controls, 
   u.uBgDotAngle.value = THREE.MathUtils.degToRad(s.bgDotAngle);
   u.uBgDots.value = s.bgDots;
   u.uBgDotDrift.value = s.bgDotDrift;
+  u.uBgDotVary.value = s.bgDotVary;
   u.uBgNoiseOpacity.value = s.bgNoise;
   u.uBgNoiseScale.value = s.bgNoiseScale;
   u.uBgSoft.value = s.bgSoft;
@@ -277,6 +279,7 @@ export function createTweakPanel(settings, onChange, overlay) {
   bg.add(settings, 'bgDotAngle', -45, 45, 1).name('Dot angle');
   bg.add(settings, 'bgDots', 0, 1, 0.01).name('Dot strength');
   bg.add(settings, 'bgDotDrift', 0, 4, 0.05).name('Dot drift speed');
+  bg.add(settings, 'bgDotVary', 0, 1, 0.01).name('Dot variation');
 
   const frame = gui.addFolder('Frame (sizes at 1440px wide)');
   frame.add(settings, 'frameBorder', 0, 60, 1).name('Border (px)');

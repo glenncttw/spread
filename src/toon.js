@@ -508,6 +508,7 @@ export function createOutlineMaterial() {
       uBgDotSize: { value: 6 }, // CSS pixels
       uBgDotAngle: { value: -0.2 }, // radians
       uBgDotDrift: { value: 2 }, // dot rows per second, along the screen's tilt
+      uBgDotVary: { value: 0.5 }, // 0 = a rigid grid, 1 = loose and hand-printed
       uBgDots: { value: 0.7 }, // dot strength
       uBgNoiseOpacity: { value: 0.65 },
       uBgNoiseScale: { value: 1.2 },
@@ -556,6 +557,7 @@ export function createOutlineMaterial() {
       uniform float uBgDotSize;
       uniform float uBgDotAngle;
       uniform float uBgDotDrift;
+      uniform float uBgDotVary;
       uniform float uBgDots;
       uniform float uBgSoft;
       uniform vec3 uFrame;
@@ -596,9 +598,16 @@ export function createOutlineMaterial() {
         // The screen slides slowly upward along its own tilt, so the dots
         // drift diagonally while their sizes keep following the colors below.
         grid.y -= uBgTime * uBgDotDrift;
+        // A hand-printed feel: the rows bend gently, the spacing breathes a
+        // little from place to place, and each dot is a touch bigger or
+        // smaller than its neighbours.
+        vec2 slow = grid * 0.045;
+        float spacing = 1.0 + (noise(slow * 0.6 + 4.0) - 0.5) * 0.35 * uBgDotVary;
+        grid = grid / spacing + (vec2(noise(slow), noise(slow + 17.0)) - 0.5) * 1.0 * uBgDotVary;
         float d = length(fract(grid) - 0.5);
         float luma = dot(color, vec3(0.299, 0.587, 0.114));
         float r = sqrt(clamp((1.0 - luma) * mix(1.2, 0.6, uBgSoft) + mix(0.12, 0.3, uBgSoft), 0.0, 1.0)) * 0.55;
+        r *= 1.0 + (hash(floor(grid)) - 0.5) * 0.3 * uBgDotVary;
         float aa = fwidth(d) * 0.75;
         float dotMask = 1.0 - smoothstep(r - aa, r + aa, d);
         vec3 ink = mix(pow(color, vec3(1.8)) * 0.85, color * 0.88, uBgSoft);

@@ -44,7 +44,15 @@
     /* Letters are separate so each can lean a little (set from main.js).
        The outline and shadow are drawn around all of them together by the
        SVG filters below, so overlapping letters merge into one shape. */
-    .title > span > span { display: inline-block; transform: rotate(calc(var(--lean, 0) * 1deg)); }
+    /* --ty, --sx, --sy and --tr are the jelly entrance (src/title.js). */
+    .title > span > span {
+      display: inline-block;
+      transform-origin: 50% 90%;
+      transform: translateY(calc(var(--ty, 0) * 1em)) rotate(calc((var(--lean, 0) + var(--tr, 0)) * 1deg))
+        scale(var(--sx, 1), var(--sy, 1));
+    }
+    /* "Message" leans the opposite way to "Spread". */
+    .title--message .title__big { --title-big-rotate: -3.5; --title-big-turn: 5; --title-big-x: 4; }
     .title__small {
       top: calc(var(--title-small-top, 83) * var(--u));
       font-size: calc(var(--title-small-size, 38.5) * var(--u));
@@ -109,7 +117,8 @@
       box-sizing: border-box;
       width: max(calc(var(--dot) * var(--s)), 22px);
       height: max(calc(var(--dot) * var(--s)), 22px);
-      transform: translate(-50%, -50%) translate(calc(var(--press) * 2.4 * var(--px)), calc(var(--press) * 2.4 * var(--px)));
+      transform: translate(-50%, -50%) translate(calc(var(--press) * 2.4 * var(--px)), calc(var(--press) * 2.4 * var(--px)))
+        scale(var(--in, 1));
       border: calc(2.5 * var(--px)) solid var(--ink);
       border-radius: 50%;
       background: var(--color);
@@ -216,7 +225,7 @@
       /* From the circle's center, as in the mockup. */
       left: calc(50% - 24 * var(--u));
       top: calc(50% - 27 * var(--u));
-      transform: translate(-50%, -50%) rotate(-9deg) scale(var(--s));
+      transform: translate(-50%, -50%) rotate(-9deg) scale(calc(var(--s) * var(--in, 1)));
       font-family: "BD Karlo", ui-rounded, system-ui, sans-serif;
       font-size: calc(40 * var(--u));
       line-height: 1;

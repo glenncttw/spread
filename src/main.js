@@ -24,6 +24,7 @@ import { createNextButton } from './ui.js';
 import { createLoader } from './loader.js';
 import { createStreaks } from './streaks.js';
 import { createFluid } from './fluid.js';
+import { hideTitle, popIn, popOut, setWord } from './title.js';
 import { gsap } from 'gsap';
 
 const loader = createLoader();
@@ -164,6 +165,13 @@ function spinToast(seconds) {
 function playIntro() {
   const quick = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   gsap.to(intro, { t: 1, duration: quick ? 0.5 : 2.4, ease: 'power2.out', onUpdate: showIntro });
+  // The title springs in letter by letter, then the color dots pop in from
+  // top to bottom, then NEXT.
+  popIn(titleSmall, { delay: 0.05 });
+  popIn(titleBig, { delay: 0.3 });
+  const pop = { '--in': 1, duration: quick ? 0.3 : 0.7, ease: quick ? 'power2.out' : 'back.out(3.2)' };
+  gsap.to('.flavor__dot', { ...pop, delay: 0.75, stagger: quick ? 0 : 0.08 });
+  gsap.to(next.element, { ...pop, duration: quick ? 0.3 : 0.9, ease: quick ? 'power2.out' : 'elastic.out(1, 0.5)', delay: 1.2 });
 }
 let model = null;
 const letterRolls = []; // see shuffleLetters()
@@ -404,8 +412,28 @@ const panel = showPanel
     }, overlay)
   : null;
 
-// The next step of the site isn't built yet, so NEXT only bounces for now.
-const next = createNextButton();
+// NEXT moves on to the message step. Only its title is built so far: the
+// big word springs out and "Message" springs in, leaning the other way.
+const titleEl = document.querySelector('.title');
+const titleSmall = document.querySelector('.title__small');
+const titleBig = document.querySelector('.title__big');
+let step = 'spread';
+const next = createNextButton({
+  onClick() {
+    if (step !== 'spread') return;
+    step = 'message';
+    popOut(titleBig).then(() => {
+      setWord(titleBig, 'Message');
+      titleEl.classList.add('title--message');
+      titleEl.setAttribute('aria-label', 'Pick your message');
+      shuffleLetters();
+      popIn(titleBig);
+    });
+  },
+});
+// Everything that pops in after the loading screen starts hidden.
+hideTitle([titleSmall, titleBig]);
+gsap.set(['.flavor__dot', next.element], { '--in': 0 });
 function placeNext() {
   const { x, y, radius } = next.current();
   outline.uniforms.uNext.value.set(x, window.innerHeight - y, radius);

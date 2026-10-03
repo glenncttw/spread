@@ -48,6 +48,7 @@ function roll(dissolve, variation) {
 export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor, getTiming, onSwitch }) {
   let busy = false;
   let queued = null;
+  let running = null; // the switch's tween while it plays
 
   const list = document.querySelector('.flavors');
   const buttons = flavors.map((flavor, i) => {
@@ -94,7 +95,12 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
   function switchTo(i) {
     if (flavors[i].color === getColor().toLowerCase() && !busy) return;
     if (busy) {
-      queued = i; // play the latest pick once this switch finishes
+      // Picking again mid-switch: the running one hurries to its end (in about
+      // a tenth of a second) and the latest pick plays straight after.
+      queued = i;
+      buttons.forEach((b, j) => press(b, j === i));
+      const left = running.duration() - running.time();
+      running.timeScale(Math.max(running.timeScale(), left / 0.12));
       return;
     }
     busy = true;
@@ -112,7 +118,7 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
     onSwitch?.(duration);
     const progress = { value: 0 };
     dissolve.uSwitch.value.set(0, 1);
-    gsap.to(progress, {
+    running = gsap.to(progress, {
       value: 1,
       duration,
       ease: easings[easing] ?? 'power2.out',
@@ -120,12 +126,10 @@ export function createSpreadSwitch({ dissolve, getColor, setColor, keepOldColor,
       onComplete() {
         dissolve.uSwitch.value.set(0, 0);
         busy = false;
-        sync();
-        if (queued !== null) {
-          const next = queued;
-          queued = null;
-          switchTo(next);
-        }
+        if (queued === null) return sync();
+        const next = queued;
+        queued = null;
+        switchTo(next);
       },
     });
   }

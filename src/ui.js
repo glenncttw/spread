@@ -115,10 +115,11 @@ export function createNextButton({ onClick } = {}) {
   return {
     element: button,
     layout,
-    // Radius right now, including the hover bounce.
+    // Radius right now, including the hover bounce and the entrance (--in).
     current() {
       const s = Number(gsap.getProperty(button, '--s')) || 1;
-      return { x: shape.x, y: shape.y, radius: shape.radius * s };
+      const entrance = parseFloat(gsap.getProperty(button, '--in'));
+      return { x: shape.x, y: shape.y, radius: shape.radius * s * (Number.isNaN(entrance) ? 1 : entrance) };
     },
   };
 }

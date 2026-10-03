@@ -293,7 +293,7 @@ export function createFluid(renderer) {
       const py = 0.5 + 0.34 * Math.sin(t * 0.9 + i * 1.7);
       const vx = 0.38 * 1.3 * Math.cos(t * 1.3 + i) * aspect;
       const vy = 0.34 * 0.9 * Math.cos(t * 0.9 + i * 1.7);
-      addSplat(px, py, vx * stir * dt * 1.5, vy * stir * dt * 1.5, 0.3);
+      addSplat(px, py, vx * stir * dt * 0.7, vy * stir * dt * 0.7, 0.17);
     }
 
     if (inside && cursor.known && drag > 0) {
@@ -306,9 +306,9 @@ export function createFluid(renderer) {
         addSplat(
           cursor.x + (x - cursor.x) * k,
           cursor.y + (y - cursor.y) * k,
-          (dx / dt) * 0.35 * drag / steps,
-          (dy / dt) * 0.35 * drag / steps,
-          0.085,
+          (dx / dt) * 0.2 * drag / steps,
+          (dy / dt) * 0.2 * drag / steps,
+          0.045,
         );
       }
     }
@@ -357,7 +357,7 @@ export function createFluid(renderer) {
 
     advect.uniforms.uVelocity.value = velocity.read.texture;
     advect.uniforms.uSource.value = offset.read.texture;
-    advect.uniforms.uKeep.value = Math.exp(-dt * 0.35);
+    advect.uniforms.uKeep.value = Math.exp(-dt * 0.6);
     advect.uniforms.uIsOffset.value = 1;
     run(advect, offset.write);
     offset.swap();
